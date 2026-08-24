@@ -1,3 +1,8 @@
+const SERVICE_URL =
+  "https://services1.arcgis.com/Ezk9fcjSUkeadg6u/ArcGIS/rest/services/Lab9_WFL1/FeatureServer/0";
+
+const QUERY_URL = SERVICE_URL + "/query";
+
 const map = L.map("map").setView([39.5, -98.35], 4);
 
 L.tileLayer(
@@ -12,11 +17,35 @@ const markers = L.layerGroup().addTo(map);
 
 let incidents = [];
 
-const FEATURE_SERVER =
-  "https://services2.arcgis.com/yL7v93RXrxlqkeDx/arcgis/rest/services/Terrorism_Final_Project_WFL1/FeatureServer/12/query";
+const PAGE_SIZE = 2000;
 
 
+/*
+ * Safely read a property even if the
+ * ArcGIS field uses different capitalization.
+ */
+function getProperty(properties, names, fallback = "") {
+
+  for (const name of names) {
+
+    if (
+      properties[name] !== undefined &&
+      properties[name] !== null
+    ) {
+      return properties[name];
+    }
+
+  }
+
+  return fallback;
+}
+
+
+/*
+ * Escape text before putting it into HTML.
+ */
 function escapeHTML(value) {
+
   return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -26,184 +55,334 @@ function escapeHTML(value) {
 }
 
 
-async function loadData() {
+/*
+ * Get all records from ArcGIS.
+ *
+ * The service allows 2,000 records per request,
+ * so we retrieve them in pages.
+ */
+async function loadAllRecords() {
 
   const status =
     document.getElementById("status");
 
   status.textContent =
-    "Loading U.S. terrorism incidents…";
+    "Connecting to the public terrorism dataset…";
 
 
-  const params =
-    new URLSearchParams({
+  let allFeatures = [];
 
-      where:
-        "Country_Name = 'United States'",
-
-      outFields:
-        "*",
-
-      returnGeometry:
-        "true",
-
-      outSR:
-        "4326",
-
-      f:
-        "geojson"
-
-    });
+  let offset = 0;
 
 
-  try {
+  while (true) {
+
+    status.textContent =
+      `Loading terrorism incidents… ${
+        allFeatures.length.toLocaleString()
+      } records retrieved`;
+
+
+    const params =
+      new URLSearchParams({
+
+        where: "1=1",
+
+        outFields: "*",
+
+        returnGeometry: "true",
+
+        outSR: "4326",
+
+        resultOffset: String(offset),
+
+        resultRecordCount: String(PAGE_SIZE),
+
+        orderByFields: "OBJECTID ASC",
+
+        f: "json"
+
+      });
+
 
     const response =
       await fetch(
-        FEATURE_SERVER +
+        QUERY_URL +
         "?" +
         params.toString()
       );
 
 
     if (!response.ok) {
+
       throw new Error(
-        `Dataset request failed: HTTP ${response.status}`
+        `ArcGIS returned HTTP ${response.status}`
       );
+
     }
 
 
-    const geojson =
+    const data =
       await response.json();
 
 
-    if (
-      !geojson.features ||
-      !geojson.features.length
-    ) {
+    if (data.error) {
 
       throw new Error(
-        "The data service returned zero U.S. incidents."
+        data.error.message ||
+        "ArcGIS returned an error."
       );
 
     }
 
 
-    incidents =
-      geojson.features
-        .map(feature => {
-
-          const p =
-            feature.properties || {};
-
-          const geometry =
-            feature.geometry;
+    const features =
+      data.features || [];
 
 
-          if (
-            !geometry ||
-            !geometry.coordinates ||
-            geometry.coordinates.length < 2
-          ) {
-            return null;
-          }
+    allFeatures =
+      allFeatures.concat(features);
 
 
-          return {
-
-            id:
-              p.eventid ||
-              p.EVENTID ||
-              p.OBJECTID ||
-              "",
-
-            year:
-              p.Year ||
-              p.year ||
-              "",
-
-            month:
-              p.Month ||
-              p.month ||
-              "",
-
-            day:
-              p.Day ||
-              p.day ||
-              "",
-
-            country:
-              p.Country_Name ||
-              "",
-
-            region:
-              p.Region ||
-              "",
-
-            city:
-              p.City ||
-              "Unknown",
-
-            latitude:
-              Number(
-                geometry.coordinates[1]
-              ),
-
-            longitude:
-              Number(
-                geometry.coordinates[0]
-              ),
-
-            description:
-              p.summary ||
-              p.Summary ||
-              "",
-
-            killed:
-              Number(
-                p.nkill ||
-                p.Nkill ||
-                0
-              ),
-
-            injured:
-              Number(
-                p.nwound ||
-                p.Nwound ||
-                0
-              )
-
-          };
-
-        })
-        .filter(Boolean);
+    /*
+     * If fewer than 2,000 came back,
+     * we have reached the end.
+     */
+    if (
+      features.length < PAGE_SIZE
+    ) {
+      break;
+    }
 
 
-    populateYears();
-
-    render();
+    offset += PAGE_SIZE;
 
 
-    status.innerHTML =
-      `<strong>${incidents.length.toLocaleString()}</strong>
-       U.S. terrorism incidents loaded from the public
-       GTD-derived geographic dataset.`;
-
-
-  } catch (error) {
-
-    console.error(error);
-
-    status.innerHTML =
-      `<strong>Unable to load the incident dataset.</strong>
-       <br><br>
-       ${escapeHTML(error.message)}`;
+    /*
+     * Safety limit so a broken service
+     * cannot create an infinite loop.
+     */
+    if (offset > 100000) {
+      break;
+    }
 
   }
+
+
+  return allFeatures;
 
 }
 
 
+/*
+ * Convert ArcGIS records into the
+ * simpler structure used by the page.
+ */
+function normalizeFeatures(features) {
+
+  return features
+    .map(feature => {
+
+      const p =
+        feature.attributes || {};
+
+      const geometry =
+        feature.geometry || {};
+
+
+      let longitude =
+        geometry.x;
+
+      let latitude =
+        geometry.y;
+
+
+      /*
+       * Some ArcGIS services may return
+       * coordinates in the geometry object.
+       */
+      if (
+        longitude === undefined ||
+        latitude === undefined
+      ) {
+
+        if (
+          geometry.coordinates &&
+          geometry.coordinates.length >= 2
+        ) {
+
+          longitude =
+            geometry.coordinates[0];
+
+          latitude =
+            geometry.coordinates[1];
+
+        }
+
+      }
+
+
+      if (
+        longitude === undefined ||
+        latitude === undefined ||
+        longitude === null ||
+        latitude === null
+      ) {
+
+        return null;
+
+      }
+
+
+      const year =
+        getProperty(
+          p,
+          [
+            "Year",
+            "YEAR",
+            "iyear",
+            "IYEAR"
+          ]
+        );
+
+
+      const month =
+        getProperty(
+          p,
+          [
+            "Month",
+            "MONTH",
+            "imonth",
+            "IMONTH"
+          ]
+        );
+
+
+      const day =
+        getProperty(
+          p,
+          [
+            "Day",
+            "DAY",
+            "iday",
+            "IDAY"
+          ]
+        );
+
+
+      const city =
+        getProperty(
+          p,
+          [
+            "City",
+            "CITY",
+            "city"
+          ],
+          "Unknown"
+        );
+
+
+      const state =
+        getProperty(
+          p,
+          [
+            "State",
+            "STATE",
+            "state"
+          ],
+          ""
+        );
+
+
+      const killedRaw =
+        getProperty(
+          p,
+          [
+            "Killed",
+            "KILLED",
+            "nkill",
+            "NKILL"
+          ],
+          0
+        );
+
+
+      const injuredRaw =
+        getProperty(
+          p,
+          [
+            "Injured",
+            "INJURED",
+            "nwound",
+            "NWOUND"
+          ],
+          0
+        );
+
+
+      const description =
+        getProperty(
+          p,
+          [
+            "Description",
+            "DESCRIPTION",
+            "summary",
+            "SUMMARY",
+            "Summary"
+          ],
+          ""
+        );
+
+
+      const id =
+        getProperty(
+          p,
+          [
+            "OBJECTID",
+            "eventid",
+            "EVENTID"
+          ],
+          ""
+        );
+
+
+      return {
+
+        id,
+
+        year,
+
+        month,
+
+        day,
+
+        city,
+
+        state,
+
+        latitude: Number(latitude),
+
+        longitude: Number(longitude),
+
+        killed:
+          Number(killedRaw) || 0,
+
+        injured:
+          Number(injuredRaw) || 0,
+
+        description
+
+      };
+
+    })
+    .filter(Boolean);
+
+}
+
+
+/*
+ * Fill the year selector.
+ */
 function populateYears() {
 
   const select =
@@ -211,11 +390,19 @@ function populateYears() {
 
 
   const years =
-    [...new Set(
-      incidents
-        .map(i => String(i.year))
-        .filter(y => /^\d{4}$/.test(y))
-    )]
+    [
+      ...new Set(
+        incidents
+          .map(
+            incident =>
+              String(incident.year)
+          )
+          .filter(
+            year =>
+              /^\d{4}$/.test(year)
+          )
+      )
+    ]
     .sort();
 
 
@@ -235,25 +422,36 @@ function populateYears() {
 }
 
 
+/*
+ * Apply the year filter.
+ */
 function getFilteredIncidents() {
 
-  const year =
+  const selectedYear =
     document.getElementById("year").value;
 
 
-  if (year === "all") {
+  if (
+    selectedYear === "all"
+  ) {
+
     return incidents;
+
   }
 
 
   return incidents.filter(
     incident =>
-      String(incident.year) === year
+      String(incident.year) ===
+      selectedYear
   );
 
 }
 
 
+/*
+ * Draw the map and incident list.
+ */
 function render() {
 
   markers.clearLayers();
@@ -263,29 +461,28 @@ function render() {
     getFilteredIncidents();
 
 
-  let deaths = 0;
-  let injuries = 0;
-
-
   const list =
-    document.getElementById("incidentList");
+    document.getElementById(
+      "incidentList"
+    );
 
 
   list.innerHTML = "";
 
 
-  data.forEach(incident => {
+  let totalKilled = 0;
 
-    deaths +=
-      Number.isFinite(incident.killed)
-        ? incident.killed
-        : 0;
+  let totalInjured = 0;
 
 
-    injuries +=
-      Number.isFinite(incident.injured)
-        ? incident.injured
-        : 0;
+  for (const incident of data) {
+
+    totalKilled +=
+      incident.killed;
+
+
+    totalInjured +=
+      incident.injured;
 
 
     const marker =
@@ -298,8 +495,9 @@ function render() {
           radius:
             incident.killed > 0
               ? Math.min(
-                  14,
-                  5 + Math.sqrt(
+                  15,
+                  5 +
+                  Math.sqrt(
                     incident.killed
                   )
                 )
@@ -312,22 +510,44 @@ function render() {
       );
 
 
+    const date =
+      [
+        incident.year,
+        incident.month,
+        incident.day
+      ]
+      .filter(
+        value =>
+          value !== "" &&
+          value !== null &&
+          value !== undefined
+      )
+      .join("-");
+
+
     marker.bindPopup(`
 
       <div style="min-width:230px">
 
         <h3 style="margin-top:0">
-          ${escapeHTML(incident.city)}
-          ${incident.region
-            ? ", " +
-              escapeHTML(incident.region)
-            : ""}
+
+          ${escapeHTML(
+            incident.city
+          )}
+
+          ${
+            incident.state
+              ? ", " +
+                escapeHTML(
+                  incident.state
+                )
+              : ""
+          }
+
         </h3>
 
         <strong>Date:</strong>
-        ${escapeHTML(
-          `${incident.year}-${incident.month}-${incident.day}`
-        )}
+        ${escapeHTML(date)}
 
         <br><br>
 
@@ -341,18 +561,20 @@ function render() {
 
         ${
           incident.description
-            ? `<br><br>
-               ${escapeHTML(
-                 incident.description
-               )}`
+            ? `
+              <br><br>
+              ${escapeHTML(
+                incident.description
+              )}
+            `
             : ""
         }
 
         <br><br>
 
         <small>
-          Source: Global Terrorism Database-derived
-          ArcGIS dataset
+          Source: START / Global Terrorism Database
+          derived public geographic dataset.
         </small>
 
       </div>
@@ -364,7 +586,9 @@ function render() {
 
 
     const item =
-      document.createElement("div");
+      document.createElement(
+        "div"
+      );
 
 
     item.className =
@@ -374,20 +598,35 @@ function render() {
     item.innerHTML = `
 
       <strong>
-        ${escapeHTML(
-          `${incident.year}-${incident.month}-${incident.day}`
-        )}
+
+        ${escapeHTML(date)}
+
         —
-        ${escapeHTML(incident.city)}
-        ${incident.region
-          ? ", " +
-            escapeHTML(incident.region)
-          : ""}
+
+        ${escapeHTML(
+          incident.city
+        )}
+
+        ${
+          incident.state
+            ? ", " +
+              escapeHTML(
+                incident.state
+              )
+            : ""
+        }
+
       </strong>
 
-      Killed: ${incident.killed}
+      <br>
+
+      Killed:
+      ${incident.killed}
+
       &nbsp; | &nbsp;
-      Injured: ${incident.injured}
+
+      Injured:
+      ${incident.injured}
 
     `;
 
@@ -412,7 +651,7 @@ function render() {
 
     list.appendChild(item);
 
-  });
+  }
 
 
   document.getElementById(
@@ -424,25 +663,20 @@ function render() {
   document.getElementById(
     "deathCount"
   ).textContent =
-    deaths.toLocaleString();
+    totalKilled.toLocaleString();
 
 
   document.getElementById(
     "injuryCount"
   ).textContent =
-    injuries.toLocaleString();
+    totalInjured.toLocaleString();
 
 }
 
 
-document
-  .getElementById("year")
-  .addEventListener(
-    "change",
-    render
-  );
-
-
+/*
+ * Reset button.
+ */
 document
   .getElementById("reset")
   .addEventListener(
@@ -459,4 +693,94 @@ document
   );
 
 
-loadData();
+/*
+ * Year filter.
+ */
+document
+  .getElementById("year")
+  .addEventListener(
+    "change",
+    render
+  );
+
+
+/*
+ * Start everything.
+ */
+async function start() {
+
+  try {
+
+    const features =
+      await loadAllRecords();
+
+
+    incidents =
+      normalizeFeatures(
+        features
+      );
+
+
+    if (!incidents.length) {
+
+      throw new Error(
+        "The public dataset returned records, but none contained usable map coordinates."
+      );
+
+    }
+
+
+    populateYears();
+
+    render();
+
+
+    document.getElementById(
+      "status"
+    ).innerHTML = `
+
+      <strong>
+        ${incidents.length.toLocaleString()}
+        incidents loaded.
+      </strong>
+
+      <br>
+
+      Source: University of Maryland START /
+      Global Terrorism Database-derived
+      public geographic dataset.
+
+    `;
+
+  } catch (error) {
+
+    console.error(error);
+
+
+    document.getElementById(
+      "status"
+    ).innerHTML = `
+
+      <strong>
+        The incident dataset could not be loaded.
+      </strong>
+
+      <br><br>
+
+      ${escapeHTML(
+        error.message
+      )}
+
+      <br><br>
+
+      Open your browser's developer console
+      if you need the technical error.
+
+    `;
+
+  }
+
+}
+
+
+start();
