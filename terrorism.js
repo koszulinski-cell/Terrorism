@@ -3,108 +3,68 @@ const map = L.map("map").setView([39.5, -98.35], 4);
 L.tileLayer(
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
   {
-    maxZoom: 18,
-    attribution: "&copy; OpenStreetMap contributors"
+    attribution: "&copy; OpenStreetMap contributors",
+    maxZoom: 18
   }
 ).addTo(map);
 
 const markers = L.layerGroup().addTo(map);
 
-let allIncidents = [];
+let incidents = [];
 
-
-/*
- * Public GTD-derived CSV.
- *
- * This is a publicly accessible historical derivative containing
- * incident-level GTD fields including date, country, state,
- * city, latitude, longitude, deaths and injuries.
- */
 const DATA_URL =
-  "https://gist.githubusercontent.com/ScottPanIE/23f2f193dbce67d6c432ff58170b9923/raw/gtd.csv";
-
-
-function number(value) {
-  const n = Number(value);
-
-  if (!Number.isFinite(n)) {
-    return 0;
-  }
-
-  return n;
-}
-
-
-function cleanDate(row) {
-
-  if (row.date_parsed) {
-    return row.date_parsed.substring(0, 10);
-  }
-
-  const year = row.iyear;
-  const month = String(row.imonth || 1).padStart(2, "0");
-  const day = String(row.iday || 1).padStart(2, "0");
-
-  if (year) {
-    return `${year}-${month}-${day}`;
-  }
-
-  return "Unknown";
-}
+  "https://raw.githubusercontent.com/sdasadia/Global-Terrorism-Database/master/data.csv";
 
 
 function parseCSV(text) {
 
   const rows = [];
-
   let row = [];
-  let value = "";
-  let insideQuotes = false;
+  let field = "";
+  let quoted = false;
 
   for (let i = 0; i < text.length; i++) {
 
-    const char = text[i];
-    const next = text[i + 1];
+    const c = text[i];
 
-    if (char === '"' && insideQuotes && next === '"') {
-      value += '"';
-      i++;
-      continue;
-    }
+    if (c === '"') {
 
-    if (char === '"') {
-      insideQuotes = !insideQuotes;
-      continue;
-    }
+      if (quoted && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
 
-    if (char === "," && !insideQuotes) {
-      row.push(value);
-      value = "";
-      continue;
-    }
+    } else if (c === "," && !quoted) {
 
-    if ((char === "\n" || char === "\r") && !insideQuotes) {
+      row.push(field);
+      field = "";
 
-      if (char === "\r" && next === "\n") {
+    } else if ((c === "\n" || c === "\r") && !quoted) {
+
+      if (c === "\r" && text[i + 1] === "\n") {
         i++;
       }
 
-      row.push(value);
-      value = "";
+      row.push(field);
+      field = "";
 
-      if (row.some(v => v.trim() !== "")) {
+      if (row.length > 1) {
         rows.push(row);
       }
 
       row = [];
-      continue;
-    }
 
-    value += char;
+    } else {
+
+      field += c;
+
+    }
   }
 
-  if (value.length || row.length) {
-    row.push(value);
+  if (field.length || row.length) {
+    row.push(field);
     rows.push(row);
   }
 
@@ -112,30 +72,99 @@ function parseCSV(text) {
     return [];
   }
 
-  const headers = rows[0].map(h => h.trim());
+  const headers = rows[0].map(h =>
+    h.trim().toLowerCase()
+  );
 
   return rows.slice(1).map(values => {
 
-    const obj = {};
+    const object = {};
 
     headers.forEach((header, index) => {
-      obj[header] = (values[index] || "").trim();
+      object[header] =
+        values[index] === undefined
+          ? ""
+          : values[index].trim();
     });
 
-    return obj;
+    return object;
+
   });
+}
+
+
+function num(value) {
+
+  const n = Number(value);
+
+  return Number.isFinite(n) ? n : 0;
+
+}
+
+
+function escapeHTML(value) {
+
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+}
+
+
+function getDate(row) {
+
+  const year = row.iyear;
+  const month = String(row.imonth || 1).padStart(2, "0");
+  const day = String(row.iday || 1).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+
 }
 
 
 function normalize(row) {
 
-  const latitude = number(row.latitude);
-  const longitude = number(row.longitude);
+  /*
+   * GTD country code 217 = United States.
+   *
+   * We use country_txt as an additional check.
+   */
+  const country =
+    row.country_txt ||
+    row.country;
 
-  if (!latitude || !longitude) {
+  if (
+    country !== "United States" &&
+    country !== "United States of America"
+  ) {
     return null;
   }
 
+
+  const latitude = num(row.latitude);
+  const longitude = num(row.longitude);
+
+
+  /*
+   * Some GTD records don't have usable coordinates.
+   * Those cannot be plotted.
+   */
+  if (
+    latitude === 0 ||
+    longitude === 0 ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    return null;
+  }
+
+
+  /*
+   * Geographic sanity check for the United States.
+   */
   if (
     latitude < 24 ||
     latitude > 50 ||
@@ -145,190 +174,220 @@ function normalize(row) {
     return null;
   }
 
+
   return {
 
-    date: cleanDate(row),
+    eventId:
+      row.eventid || "",
+
+    date:
+      getDate(row),
 
     city:
-      row.city ||
-      row.location ||
-      "Unknown",
+      row.city || "Unknown",
 
     state:
-      row.provstate ||
-      row.province ||
-      "",
+      row.provstate || "",
 
     latitude,
+
     longitude,
 
     killed:
-      number(row.nkill),
+      num(row.nkill),
 
     injured:
-      number(row.nwound),
+      num(row.nwound),
 
     attackType:
       row.attacktype1_txt ||
-      "Terrorism",
+      "Unknown",
 
     target:
       row.targtype1_txt ||
-      "",
+      "Unknown",
 
-    perpetrator:
+    group:
       row.gname ||
       "Unknown",
 
     summary:
       row.summary ||
-      "",
-
-    category: "terrorism",
-
-    source: "Global Terrorism Database-derived data"
+      ""
 
   };
+
 }
 
 
 async function loadData() {
 
-  const status = document.getElementById("status");
+  const status =
+    document.getElementById("status");
 
   status.textContent =
-    "Loading historical terrorism incidents from the public dataset...";
+    "Downloading the public terrorism dataset…";
+
 
   try {
 
-    const response = await fetch(DATA_URL);
+    const response =
+      await fetch(DATA_URL);
+
 
     if (!response.ok) {
+
       throw new Error(
-        `Dataset returned HTTP ${response.status}`
+        "Dataset returned HTTP " +
+        response.status
       );
+
     }
 
-    const text = await response.text();
 
-    const parsed = parseCSV(text);
+    const text =
+      await response.text();
 
-    const normalized = parsed
-      .map(normalize)
-      .filter(Boolean);
 
-    /*
-     * Only keep United States incidents.
-     *
-     * The source file contains multiple countries.
-     * The geographic bounds above additionally prevent
-     * obviously non-U.S. records from appearing.
-     */
-    allIncidents = normalized;
+    status.textContent =
+      "Processing terrorism incidents…";
 
-    populateYears();
+
+    const rows =
+      parseCSV(text);
+
+
+    console.log(
+      "Total rows downloaded:",
+      rows.length
+    );
+
+
+    incidents =
+      rows
+        .map(normalize)
+        .filter(Boolean);
+
+
+    console.log(
+      "U.S. incidents with coordinates:",
+      incidents.length
+    );
+
+
+    if (!incidents.length) {
+
+      throw new Error(
+        "The dataset loaded, but no U.S. incidents with usable coordinates were found."
+      );
+
+    }
+
+
+    buildYearFilter();
 
     render();
 
-    status.textContent =
-      `Loaded ${allIncidents.length.toLocaleString()} mapped U.S. incidents.`;
+
+    status.innerHTML =
+      `<strong>${incidents.length.toLocaleString()}</strong>
+       U.S. incidents loaded from the public GTD-derived dataset.`;
+
 
   } catch (error) {
 
     console.error(error);
 
     status.innerHTML =
-      `<strong>Unable to load the incident dataset.</strong><br>
-       ${error.message}`;
+      `<strong>Could not load the terrorism dataset.</strong>
+       <br><br>
+       ${escapeHTML(error.message)}
+       <br><br>
+       Open the browser developer console for details.`;
 
   }
 
 }
 
 
-function populateYears() {
+function buildYearFilter() {
 
-  const select = document.getElementById("year");
+  const select =
+    document.getElementById("year");
 
-  const years = [
-    ...new Set(
-      allIncidents
-        .map(i => i.date.substring(0, 4))
-        .filter(y => /^\d{4}$/.test(y))
-    )
-  ].sort();
+
+  const years =
+    [...new Set(
+      incidents.map(i =>
+        i.date.substring(0, 4)
+      )
+    )]
+    .sort();
+
 
   for (const year of years) {
 
-    const option = document.createElement("option");
+    const option =
+      document.createElement("option");
 
     option.value = year;
+
     option.textContent = year;
 
     select.appendChild(option);
+
   }
 
 }
 
 
-function getFilteredIncidents() {
-
-  const category =
-    document.getElementById("category").value;
+function filtered() {
 
   const year =
     document.getElementById("year").value;
 
-  return allIncidents.filter(incident => {
 
-    if (
-      category !== "all" &&
-      incident.category !== category
-    ) {
-      return false;
-    }
+  if (year === "all") {
 
-    if (
-      year !== "all" &&
-      !incident.date.startsWith(year)
-    ) {
-      return false;
-    }
+    return incidents;
 
-    return true;
-
-  });
-
-}
+  }
 
 
-function clearMarkers() {
-  markers.clearLayers();
+  return incidents.filter(
+    incident =>
+      incident.date.startsWith(year)
+  );
+
 }
 
 
 function render() {
 
-  clearMarkers();
+  markers.clearLayers();
 
-  const incidents =
-    getFilteredIncidents();
 
-  let deaths = 0;
-  let injuries = 0;
+  const data =
+    filtered();
+
+
+  let killed = 0;
+  let injured = 0;
+
 
   const list =
     document.getElementById("incidentList");
 
+
   list.innerHTML = "";
 
-  /*
-   * Draw map markers.
-   */
-  incidents.forEach(incident => {
 
-    deaths += incident.killed;
-    injuries += incident.injured;
+  for (const incident of data) {
+
+    killed += incident.killed;
+
+    injured += incident.injured;
+
 
     const marker =
       L.circleMarker(
@@ -340,8 +399,10 @@ function render() {
           radius:
             incident.killed > 0
               ? Math.min(
-                  12,
-                  5 + Math.sqrt(incident.killed)
+                  14,
+                  5 + Math.sqrt(
+                    incident.killed
+                  )
                 )
               : 5,
 
@@ -351,26 +412,30 @@ function render() {
         }
       );
 
+
     marker.bindPopup(`
 
-      <div style="min-width:220px">
+      <div style="min-width:240px">
 
-        <strong>
+        <h3 style="margin-top:0">
           ${escapeHTML(incident.city)}
           ${incident.state
             ? ", " + escapeHTML(incident.state)
             : ""}
-        </strong>
-
-        <br><br>
+        </h3>
 
         <strong>Date:</strong>
         ${escapeHTML(incident.date)}
 
+        <br><br>
+
+        <strong>Attack:</strong>
+        ${escapeHTML(incident.attackType)}
+
         <br>
 
-        <strong>Attack type:</strong>
-        ${escapeHTML(incident.attackType)}
+        <strong>Target:</strong>
+        ${escapeHTML(incident.target)}
 
         <br>
 
@@ -382,157 +447,125 @@ function render() {
         <strong>Injured:</strong>
         ${incident.injured}
 
-        ${
-          incident.target
-            ? `<br><strong>Target:</strong>
-               ${escapeHTML(incident.target)}`
-            : ""
-        }
+        <br><br>
 
-        ${
-          incident.perpetrator
-            ? `<br><strong>Group/Perpetrator:</strong>
-               ${escapeHTML(incident.perpetrator)}`
-            : ""
-        }
+        <strong>Group:</strong>
+        ${escapeHTML(incident.group)}
 
         ${
           incident.summary
-            ? `<br><br>${escapeHTML(incident.summary)}`
+            ? `<br><br>
+               ${escapeHTML(incident.summary)}`
             : ""
         }
 
         <br><br>
 
         <small>
-          Source: Global Terrorism Database-derived data
+          Global Terrorism Database-derived data
         </small>
 
       </div>
 
     `);
 
+
     marker.addTo(markers);
 
-  });
+
+    /*
+     * Incident list
+     */
+    const item =
+      document.createElement("div");
 
 
-  /*
-   * Statistics.
-   */
+    item.className =
+      "incident";
+
+
+    item.innerHTML = `
+
+      <strong>
+        ${escapeHTML(incident.date)}
+        —
+        ${escapeHTML(incident.city)}
+        ${incident.state
+          ? ", " + escapeHTML(incident.state)
+          : ""}
+      </strong>
+
+      ${escapeHTML(incident.attackType)}
+
+      <br>
+
+      Killed: ${incident.killed}
+      &nbsp; | &nbsp;
+      Injured: ${incident.injured}
+
+    `;
+
+
+    item.onclick = () => {
+
+      map.setView(
+        [
+          incident.latitude,
+          incident.longitude
+        ],
+        10
+      );
+
+    };
+
+
+    list.appendChild(item);
+
+  }
+
+
   document.getElementById(
     "incidentCount"
   ).textContent =
-    incidents.length.toLocaleString();
+    data.length.toLocaleString();
+
 
   document.getElementById(
     "deathCount"
   ).textContent =
-    deaths.toLocaleString();
+    killed.toLocaleString();
+
 
   document.getElementById(
     "injuryCount"
   ).textContent =
-    injuries.toLocaleString();
-
-
-  /*
-   * Incident list.
-   *
-   * Limit the displayed list so a large historical
-   * dataset does not make the browser sluggish.
-   */
-  const displayLimit = 500;
-
-  incidents
-    .slice()
-    .sort((a, b) =>
-      b.date.localeCompare(a.date)
-    )
-    .slice(0, displayLimit)
-    .forEach(incident => {
-
-      const div =
-        document.createElement("div");
-
-      div.className = "incident";
-
-      div.innerHTML = `
-
-        <strong>
-          ${escapeHTML(incident.date)}
-          —
-          ${escapeHTML(incident.city)}
-          ${incident.state
-            ? ", " + escapeHTML(incident.state)
-            : ""}
-        </strong>
-
-        ${escapeHTML(incident.attackType)}
-
-        <br>
-
-        Killed: ${incident.killed}
-        &nbsp; | &nbsp;
-        Injured: ${incident.injured}
-
-      `;
-
-      div.addEventListener(
-        "click",
-        () => {
-
-          map.setView(
-            [
-              incident.latitude,
-              incident.longitude
-            ],
-            10
-          );
-
-        }
-      );
-
-      list.appendChild(div);
-
-    });
+    injured.toLocaleString();
 
 }
-
-
-function escapeHTML(value) {
-
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-
-}
-
-
-document
-  .getElementById("category")
-  .addEventListener("change", render);
 
 
 document
   .getElementById("year")
-  .addEventListener("change", render);
+  .addEventListener(
+    "change",
+    render
+  );
 
 
 document
   .getElementById("reset")
-  .addEventListener("click", () => {
+  .addEventListener(
+    "click",
+    () => {
 
-    document.getElementById("category").value = "all";
+      document.getElementById(
+        "year"
+      ).value = "all";
 
-    document.getElementById("year").value = "all";
+      render();
 
-    render();
-
-  });
+    }
+  );
 
 
 loadData();
