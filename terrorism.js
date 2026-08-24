@@ -1,355 +1,887 @@
-const TERRORISM_DATA_URL = "/terrorism-data.json";
+let incidents = [];
+let map = null;
+let markers = [];
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+const DATA_FILE = "terrorism-data.json";
 
-function formatNumber(value) {
-  return Number(value || 0).toLocaleString();
-}
 
-function formatDate(value) {
-  if (!value) return "Unknown";
+// --------------------------------------------------
+// START
+// --------------------------------------------------
 
-  const date = new Date(value);
+document.addEventListener("DOMContentLoaded", loadData);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
+
+// --------------------------------------------------
+// LOAD DATA
+// --------------------------------------------------
+
+async function loadData() {
+
+  try {
+
+    const response = await fetch(DATA_FILE, {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Could not load ${DATA_FILE} (${response.status})`
+      );
+    }
+
+    const data = await response.json();
+
+    /*
+     * Accept either:
+     *
+     * [
+     *   {...},
+     *   {...}
+     * ]
+     *
+     * OR:
+     *
+     * {
+     *   incidents: [...]
+     * }
+     */
+
+    if (Array.isArray(data)) {
+
+      incidents = data;
+
+    } else if (Array.isArray(data.incidents)) {
+
+      incidents = data.incidents;
+
+    } else {
+
+      throw new Error(
+        "terrorism-data.json does not contain an incident array."
+      );
+
+    }
+
+
+    console.log(
+      `Loaded ${incidents.length} terrorism incidents.`
+    );
+
+
+    initializePage();
+
+  } catch (error) {
+
+    console.error(error);
+
+    showError(
+      "The terrorism dataset could not be loaded.",
+      error.message
+    );
+
   }
 
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  });
 }
 
-function incidentPopup(incident) {
-  return `
-    <div class="popup">
-      <h3>${escapeHtml(incident.title || "Terrorism incident")}</h3>
 
-      <p>
-        <strong>Date:</strong>
-        ${escapeHtml(formatDate(incident.date))}
-      </p>
+// --------------------------------------------------
+// INITIALIZE PAGE
+// --------------------------------------------------
 
-      <p>
-        <strong>Location:</strong>
-        ${escapeHtml(
-          [incident.city, incident.state]
-            .filter(Boolean)
-            .join(", ")
-        )}
-      </p>
+function initializePage() {
 
-      <p>
-        <strong>Fatalities:</strong>
-        ${formatNumber(incident.fatalities)}
-      </p>
+  initializeMap();
 
-      <p>
-        <strong>Injuries:</strong>
-        ${formatNumber(incident.injuries)}
-      </p>
+  populateFilters();
 
-      ${
-        incident.category
-          ? `<p><strong>Category:</strong> ${escapeHtml(incident.category)}</p>`
-          : ""
-      }
+  updatePage();
 
-      ${
-        incident.description
-          ? `<p>${escapeHtml(incident.description)}</p>`
-          : ""
-      }
-
-      ${
-        incident.source
-          ? `<p class="source">
-              Source: ${escapeHtml(incident.source)}
-            </p>`
-          : ""
-      }
-    </div>
-  `;
 }
 
-async function loadTerrorismData() {
-  const response = await fetch(TERRORISM_DATA_URL, {
-    cache: "no-store"
-  });
 
-  if (!response.ok) {
-    throw new Error("Could not load terrorism-data.json");
+// --------------------------------------------------
+// MAP
+// --------------------------------------------------
+
+function initializeMap() {
+
+  const mapElement =
+    document.getElementById("map");
+
+  if (!mapElement) {
+
+    console.error(
+      "Map element #map was not found."
+    );
+
+    return;
   }
 
-  return response.json();
-}
 
-function buildPage(data) {
-  const incidents = Array.isArray(data.incidents)
-    ? data.incidents
-    : [];
+  map = L.map("map").setView(
+    [39.8283, -98.5795],
+    4
+  );
 
-  document.title = "Domestic Terrorism | Today";
-
-  document.body.innerHTML = `
-    <header class="top">
-      <div>
-        <a class="back" href="/">← Today</a>
-        <h1>Domestic Terrorism</h1>
-        <p class="subtitle">
-          U.S. terrorism incidents represented in the selected dataset
-        </p>
-      </div>
-    </header>
-
-    <main>
-
-      <section class="controls">
-
-        <label for="year">
-          Year
-        </label>
-
-        <select id="year">
-          <option value="all">All years</option>
-        </select>
-
-      </section>
-
-      <section class="stats">
-
-        <div class="stat">
-          <div class="stat-number" id="incident-count">0</div>
-          <div class="stat-label">Incidents</div>
-        </div>
-
-        <div class="stat">
-          <div class="stat-number" id="fatality-count">0</div>
-          <div class="stat-label">Fatalities</div>
-        </div>
-
-        <div class="stat">
-          <div class="stat-number" id="injury-count">0</div>
-          <div class="stat-label">Injuries</div>
-        </div>
-
-      </section>
-
-      <section class="map-container">
-        <div id="map"></div>
-      </section>
-
-      <section class="about">
-
-        <h2>About this map</h2>
-
-        <p>
-          This map displays incidents contained in the selected
-          terrorism dataset. It should not be interpreted as a
-          comprehensive count of every violent incident in the
-          United States.
-        </p>
-
-        <p>
-          Definitions of terrorism vary among datasets and agencies.
-          Classification, geographic coverage, and historical coverage
-          depend on the underlying source.
-        </p>
-
-        <p>
-          <strong>Dataset:</strong>
-          <a
-            href="${escapeHtml(data.sourceUrl || "#")}"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            ${escapeHtml(data.source || "Source dataset")}
-          </a>
-        </p>
-
-        ${
-          data.updated
-            ? `<p>
-                <strong>Dataset date:</strong>
-                ${escapeHtml(data.updated)}
-              </p>`
-            : ""
-        }
-
-      </section>
-
-    </main>
-  `;
-
-  const years = [
-    ...new Set(
-      incidents
-        .map(item => {
-          if (!item.date) return null;
-
-          const date = new Date(item.date);
-
-          if (Number.isNaN(date.getTime())) {
-            return String(item.date).slice(0, 4);
-          }
-
-          return String(date.getFullYear());
-        })
-        .filter(Boolean)
-    )
-  ].sort((a, b) => Number(b) - Number(a));
-
-  const yearSelect = document.getElementById("year");
-
-  years.forEach(year => {
-    const option = document.createElement("option");
-    option.value = year;
-    option.textContent = year;
-    yearSelect.appendChild(option);
-  });
-
-  const map = L.map("map", {
-    scrollWheelZoom: true
-  }).setView([39.5, -98.35], 4);
 
   L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     {
-      maxZoom: 18,
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
     }
   ).addTo(map);
 
-  const markerLayer = L.layerGroup().addTo(map);
+}
 
-  function updateMap() {
-    markerLayer.clearLayers();
 
-    const selectedYear = yearSelect.value;
+// --------------------------------------------------
+// FILTERS
+// --------------------------------------------------
 
-    const filtered = incidents.filter(incident => {
+function populateFilters() {
 
-      if (selectedYear === "all") {
-        return true;
-      }
+  const yearSelect =
+    document.getElementById("yearFilter");
 
-      if (!incident.date) {
-        return false;
-      }
+  const stateSelect =
+    document.getElementById("stateFilter");
 
-      const date = new Date(incident.date);
 
-      if (!Number.isNaN(date.getTime())) {
-        return String(date.getFullYear()) === selectedYear;
-      }
+  const years = new Set();
+  const states = new Set();
 
-      return String(incident.date).startsWith(selectedYear);
-    });
 
-    let fatalities = 0;
-    let injuries = 0;
+  incidents.forEach(incident => {
 
-    filtered.forEach(incident => {
+    const year = getYear(incident);
 
-      fatalities += Number(incident.fatalities || 0);
-      injuries += Number(incident.injuries || 0);
+    if (year) {
+      years.add(year);
+    }
 
-      const latitude = Number(incident.latitude);
-      const longitude = Number(incident.longitude);
 
-      if (
-        !Number.isFinite(latitude) ||
-        !Number.isFinite(longitude)
-      ) {
-        return;
-      }
+    const state = getState(incident);
 
-      const marker = L.circleMarker(
-        [latitude, longitude],
+    if (state) {
+      states.add(state);
+    }
+
+  });
+
+
+  if (yearSelect) {
+
+    [...years]
+      .sort((a, b) => b - a)
+      .forEach(year => {
+
+        const option =
+          document.createElement("option");
+
+        option.value = year;
+        option.textContent = year;
+
+        yearSelect.appendChild(option);
+
+      });
+
+
+    yearSelect.addEventListener(
+      "change",
+      updatePage
+    );
+
+  }
+
+
+  if (stateSelect) {
+
+    [...states]
+      .sort()
+      .forEach(state => {
+
+        const option =
+          document.createElement("option");
+
+        option.value = state;
+        option.textContent = state;
+
+        stateSelect.appendChild(option);
+
+      });
+
+
+    stateSelect.addEventListener(
+      "change",
+      updatePage
+    );
+
+  }
+
+
+  const search =
+    document.getElementById("search");
+
+
+  if (search) {
+
+    search.addEventListener(
+      "input",
+      updatePage
+    );
+
+  }
+
+}
+
+
+// --------------------------------------------------
+// FIELD HELPERS
+// --------------------------------------------------
+
+function getYear(incident) {
+
+  const value =
+    incident.year ??
+    incident.Year ??
+    incident.date ??
+    incident.Date ??
+    incident.incident_date ??
+    incident.incidentDate;
+
+
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+
+  const match =
+    String(value).match(/\b(19|20)\d{2}\b/);
+
+
+  return match
+    ? Number(match[0])
+    : null;
+
+}
+
+
+function getDate(incident) {
+
+  return (
+    incident.date ??
+    incident.Date ??
+    incident.incident_date ??
+    incident.incidentDate ??
+    ""
+  );
+
+}
+
+
+function getState(incident) {
+
+  return String(
+    incident.state ??
+    incident.State ??
+    incident.state_name ??
+    incident.stateName ??
+    ""
+  );
+
+}
+
+
+function getCity(incident) {
+
+  return String(
+    incident.city ??
+    incident.City ??
+    ""
+  );
+
+}
+
+
+function getDescription(incident) {
+
+  return String(
+    incident.description ??
+    incident.Description ??
+    incident.summary ??
+    incident.Summary ??
+    incident.details ??
+    ""
+  );
+
+}
+
+
+function getKilled(incident) {
+
+  return getNumber(
+    incident.killed ??
+    incident.Killed ??
+    incident.deaths ??
+    incident.Deaths ??
+    incident.fatalities ??
+    incident.Fatalities
+  );
+
+}
+
+
+function getInjured(incident) {
+
+  return getNumber(
+    incident.injured ??
+    incident.Injured ??
+    incident.injuries ??
+    incident.Injuries ??
+    incident.wounded ??
+    incident.Wounded
+  );
+
+}
+
+
+function getNumber(value) {
+
+  const number =
+    Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+
+}
+
+
+// --------------------------------------------------
+// COORDINATES
+// --------------------------------------------------
+
+function getCoordinates(incident) {
+
+  const latitude =
+    Number(
+      incident.latitude ??
+      incident.Latitude ??
+      incident.lat ??
+      incident.Lat ??
+      incident.y
+    );
+
+
+  const longitude =
+    Number(
+      incident.longitude ??
+      incident.Longitude ??
+      incident.lon ??
+      incident.lng ??
+      incident.Lng ??
+      incident.x
+    );
+
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+
+    return null;
+
+  }
+
+
+  /*
+   * Basic geographic sanity check.
+   *
+   * This keeps obviously broken coordinates
+   * from being plotted.
+   */
+
+  if (
+    latitude < 18 ||
+    latitude > 72 ||
+    longitude < -180 ||
+    longitude > -50
+  ) {
+
+    return null;
+
+  }
+
+
+  return {
+    latitude,
+    longitude
+  };
+
+}
+
+
+// --------------------------------------------------
+// FILTER
+// --------------------------------------------------
+
+function getFilteredIncidents() {
+
+  const year =
+    document.getElementById("yearFilter")?.value
+    || "all";
+
+
+  const state =
+    document.getElementById("stateFilter")?.value
+    || "all";
+
+
+  const search =
+    (
+      document.getElementById("search")?.value
+      || ""
+    )
+    .toLowerCase()
+    .trim();
+
+
+  return incidents.filter(incident => {
+
+    const incidentYear =
+      String(getYear(incident) || "");
+
+
+    const incidentState =
+      getState(incident);
+
+
+    const searchable =
+      JSON.stringify(incident)
+        .toLowerCase();
+
+
+    if (
+      year !== "all" &&
+      incidentYear !== year
+    ) {
+
+      return false;
+
+    }
+
+
+    if (
+      state !== "all" &&
+      incidentState !== state
+    ) {
+
+      return false;
+
+    }
+
+
+    if (
+      search &&
+      !searchable.includes(search)
+    ) {
+
+      return false;
+
+    }
+
+
+    return true;
+
+  });
+
+}
+
+
+// --------------------------------------------------
+// UPDATE PAGE
+// --------------------------------------------------
+
+function updatePage() {
+
+  const filtered =
+    getFilteredIncidents();
+
+
+  updateStatistics(filtered);
+
+  updateMap(filtered);
+
+  updateTable(filtered);
+
+}
+
+
+// --------------------------------------------------
+// STATISTICS
+// --------------------------------------------------
+
+function updateStatistics(data) {
+
+  const total =
+    document.getElementById("totalAttacks");
+
+
+  const killed =
+    document.getElementById("totalKilled");
+
+
+  const injured =
+    document.getElementById("totalInjured");
+
+
+  if (total) {
+
+    total.textContent =
+      data.length.toLocaleString();
+
+  }
+
+
+  let deaths = 0;
+  let injuries = 0;
+
+
+  data.forEach(incident => {
+
+    deaths += getKilled(incident);
+
+    injuries += getInjured(incident);
+
+  });
+
+
+  if (killed) {
+
+    killed.textContent =
+      deaths.toLocaleString();
+
+  }
+
+
+  if (injured) {
+
+    injured.textContent =
+      injuries.toLocaleString();
+
+  }
+
+}
+
+
+// --------------------------------------------------
+// MAP
+// --------------------------------------------------
+
+function updateMap(data) {
+
+  if (!map) {
+    return;
+  }
+
+
+  markers.forEach(marker => {
+
+    map.removeLayer(marker);
+
+  });
+
+
+  markers = [];
+
+
+  let plotted = 0;
+
+
+  data.forEach(incident => {
+
+    const coordinates =
+      getCoordinates(incident);
+
+
+    /*
+     * If an incident doesn't have coordinates,
+     * we keep it in the statistics/table but
+     * don't put it on the map.
+     */
+
+    if (!coordinates) {
+
+      return;
+
+    }
+
+
+    plotted++;
+
+
+    const city =
+      getCity(incident);
+
+
+    const state =
+      getState(incident);
+
+
+    const date =
+      getDate(incident);
+
+
+    const description =
+      getDescription(incident);
+
+
+    const killed =
+      getKilled(incident);
+
+
+    const injured =
+      getInjured(incident);
+
+
+    const location =
+      [city, state]
+        .filter(Boolean)
+        .join(", ");
+
+
+    const popup = `
+
+      <div style="min-width:220px">
+
+        <strong>
+          ${escapeHtml(location || "United States")}
+        </strong>
+
+        <br>
+
+        ${escapeHtml(String(date))}
+
+        <br><br>
+
+        ${escapeHtml(
+          description ||
+          "No description available."
+        )}
+
+        <br><br>
+
+        <strong>Killed:</strong>
+        ${killed}
+
+        &nbsp;&nbsp;
+
+        <strong>Injured:</strong>
+        ${injured}
+
+      </div>
+
+    `;
+
+
+    const marker =
+      L.circleMarker(
+        [
+          coordinates.latitude,
+          coordinates.longitude
+        ],
         {
-          radius: 6,
+          radius: 7,
           weight: 1,
           fillOpacity: 0.75
         }
       );
 
-      marker.bindPopup(
-        incidentPopup(incident),
-        {
-          maxWidth: 350
-        }
-      );
 
-      marker.addTo(markerLayer);
+    marker
+      .bindPopup(popup)
+      .addTo(map);
+
+
+    markers.push(marker);
+
+  });
+
+
+  console.log(
+    `Map plotted ${plotted} of ${data.length} incidents.`
+  );
+
+}
+
+
+// --------------------------------------------------
+// TABLE
+// --------------------------------------------------
+
+function updateTable(data) {
+
+  const table =
+    document.getElementById(
+      "incidentTable"
+    );
+
+
+  if (!table) {
+    return;
+  }
+
+
+  table.innerHTML = "";
+
+
+  const sorted =
+    data
+      .slice()
+      .sort((a, b) => {
+
+        const dateA =
+          new Date(getDate(a));
+
+
+        const dateB =
+          new Date(getDate(b));
+
+
+        return dateB - dateA;
+
+      });
+
+
+  sorted
+    .slice(0, 250)
+    .forEach(incident => {
+
+      const row =
+        document.createElement("tr");
+
+
+      row.innerHTML = `
+
+        <td>
+          ${escapeHtml(
+            String(getDate(incident))
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            getCity(incident)
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            getState(incident)
+          )}
+        </td>
+
+        <td>
+          ${escapeHtml(
+            getDescription(incident) ||
+            "—"
+          )}
+        </td>
+
+        <td>
+          ${getKilled(incident)}
+        </td>
+
+        <td>
+          ${getInjured(incident)}
+        </td>
+
+      `;
+
+
+      table.appendChild(row);
+
     });
 
-    document.getElementById("incident-count").textContent =
-      formatNumber(filtered.length);
 
-    document.getElementById("fatality-count").textContent =
-      formatNumber(fatalities);
+  if (data.length > 250) {
 
-    document.getElementById("injury-count").textContent =
-      formatNumber(injuries);
-  }
+    const row =
+      document.createElement("tr");
 
-  yearSelect.addEventListener("change", updateMap);
 
-  updateMap();
-}
+    row.innerHTML = `
 
-async function start() {
+      <td colspan="6">
 
-  try {
+        Showing the 250 most recent
+        incidents. Use the filters to
+        narrow the results.
 
-    const data = await loadTerrorismData();
+      </td>
 
-    buildPage(data);
-
-  } catch (error) {
-
-    document.body.innerHTML = `
-      <main style="
-        max-width:800px;
-        margin:60px auto;
-        padding:20px;
-        font-family:system-ui;
-      ">
-
-        <h1>Domestic Terrorism</h1>
-
-        <p>
-          The map data could not be loaded.
-        </p>
-
-        <p style="color:#b00020;">
-          ${escapeHtml(error.message)}
-        </p>
-
-        <p>
-          Check that <code>terrorism-data.json</code>
-          exists in the website files.
-        </p>
-
-        <p>
-          <a href="/">← Return to Today</a>
-        </p>
-
-      </main>
     `;
 
+
+    table.appendChild(row);
+
   }
 
 }
 
-start();
+
+// --------------------------------------------------
+// ERROR
+// --------------------------------------------------
+
+function showError(title, details) {
+
+  const error =
+    document.getElementById("error");
+
+
+  if (!error) {
+    return;
+  }
+
+
+  error.innerHTML = `
+
+    <div class="error">
+
+      <strong>
+        ${escapeHtml(title)}
+      </strong>
+
+      <br><br>
+
+      ${escapeHtml(details)}
+
+    </div>
+
+  `;
+
+}
+
+
+// --------------------------------------------------
+// ESCAPE HTML
+// --------------------------------------------------
+
+function escapeHtml(value) {
+
+  return String(value)
+
+    .replaceAll("&", "&amp;")
+
+    .replaceAll("<", "&lt;")
+
+    .replaceAll(">", "&gt;")
+
+    .replaceAll('"', "&quot;")
+
+    .replaceAll("'", "&#039;");
+
+}
