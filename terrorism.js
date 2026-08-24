@@ -1,473 +1,538 @@
-const DATA_URL =
-  "https://services.arcgis.com/OeCRCKr7XFYQNdyJ/arcgis/rest/services/Domestic_Terrorism_Tracker/FeatureServer/1/query";
+const map = L.map("map").setView([39.5, -98.35], 4);
 
-let map;
-let markers;
+L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {
+    maxZoom: 18,
+    attribution: "&copy; OpenStreetMap contributors"
+  }
+).addTo(map);
+
+const markers = L.layerGroup().addTo(map);
+
 let allIncidents = [];
 
-function escapeHtml(value) {
-  if (value === null || value === undefined) return "";
 
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+/*
+ * Public GTD-derived CSV.
+ *
+ * This is a publicly accessible historical derivative containing
+ * incident-level GTD fields including date, country, state,
+ * city, latitude, longitude, deaths and injuries.
+ */
+const DATA_URL =
+  "https://gist.githubusercontent.com/ScottPanIE/23f2f193dbce67d6c432ff58170b9923/raw/gtd.csv";
+
+
+function number(value) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    return 0;
+  }
+
+  return n;
 }
 
-function getValue(a, names) {
-  for (const name of names) {
-    if (
-      a[name] !== undefined &&
-      a[name] !== null &&
-      a[name] !== ""
-    ) {
-      return a[name];
+
+function cleanDate(row) {
+
+  if (row.date_parsed) {
+    return row.date_parsed.substring(0, 10);
+  }
+
+  const year = row.iyear;
+  const month = String(row.imonth || 1).padStart(2, "0");
+  const day = String(row.iday || 1).padStart(2, "0");
+
+  if (year) {
+    return `${year}-${month}-${day}`;
+  }
+
+  return "Unknown";
+}
+
+
+function parseCSV(text) {
+
+  const rows = [];
+
+  let row = [];
+  let value = "";
+  let insideQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"' && insideQuotes && next === '"') {
+      value += '"';
+      i++;
+      continue;
     }
+
+    if (char === '"') {
+      insideQuotes = !insideQuotes;
+      continue;
+    }
+
+    if (char === "," && !insideQuotes) {
+      row.push(value);
+      value = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !insideQuotes) {
+
+      if (char === "\r" && next === "\n") {
+        i++;
+      }
+
+      row.push(value);
+      value = "";
+
+      if (row.some(v => v.trim() !== "")) {
+        rows.push(row);
+      }
+
+      row = [];
+      continue;
+    }
+
+    value += char;
   }
 
-  return "";
-}
-
-function formatDate(value) {
-  if (!value) return "Date unavailable";
-
-  const d = new Date(value);
-
-  if (isNaN(d.getTime())) {
-    return String(value);
+  if (value.length || row.length) {
+    row.push(value);
+    rows.push(row);
   }
 
-  return d.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric"
+  if (!rows.length) {
+    return [];
+  }
+
+  const headers = rows[0].map(h => h.trim());
+
+  return rows.slice(1).map(values => {
+
+    const obj = {};
+
+    headers.forEach((header, index) => {
+      obj[header] = (values[index] || "").trim();
+    });
+
+    return obj;
   });
 }
 
-function getTitle(a) {
-  return getValue(a, [
-    "Incident_Name",
-    "incident_name",
-    "Incident",
-    "incident",
-    "Name",
-    "name",
-    "Title",
-    "title",
-    "Attack",
-    "attack"
-  ]) || "Terrorism incident";
-}
 
-function getDate(a) {
-  return getValue(a, [
-    "Incident_Date",
-    "incident_date",
-    "Date",
-    "DATE",
-    "date",
-    "Attack_Date",
-    "attack_date"
-  ]);
-}
+function normalize(row) {
 
-function getCity(a) {
-  return getValue(a, [
-    "City",
-    "CITY",
-    "city",
-    "Location",
-    "location"
-  ]);
-}
+  const latitude = number(row.latitude);
+  const longitude = number(row.longitude);
 
-function getState(a) {
-  return getValue(a, [
-    "State",
-    "STATE",
-    "state",
-    "State_Name",
-    "state_name"
-  ]);
-}
-
-function getDescription(a) {
-  return getValue(a, [
-    "Description",
-    "description",
-    "DESCRIPTION",
-    "Details",
-    "details",
-    "Summary",
-    "summary"
-  ]);
-}
-
-function getFatalities(a) {
-  return getValue(a, [
-    "Fatalities",
-    "fatalities",
-    "FATALITIES",
-    "Killed",
-    "killed",
-    "Deaths",
-    "deaths"
-  ]);
-}
-
-function getInjuries(a) {
-  return getValue(a, [
-    "Injuries",
-    "injuries",
-    "INJURIES",
-    "Wounded",
-    "wounded"
-  ]);
-}
-
-function addIncident(feature) {
-  if (!feature || !feature.geometry) return false;
-
-  const a = feature.attributes || {};
-
-  let x = feature.geometry.x;
-  let y = feature.geometry.y;
-
-  if (
-    typeof x !== "number" ||
-    typeof y !== "number"
-  ) {
-    return false;
-  }
-
-  /*
-    The ArcGIS service uses Web Mercator (EPSG:3857).
-    Convert to normal longitude/latitude.
-  */
-
-  if (
-    Math.abs(x) > 180 ||
-    Math.abs(y) > 90
-  ) {
-    const R = 6378137;
-
-    x =
-      (x / R) *
-      (180 / Math.PI);
-
-    y =
-      (2 *
-        Math.atan(
-          Math.exp(y / R)
-        ) -
-        Math.PI / 2) *
-      (180 / Math.PI);
+  if (!latitude || !longitude) {
+    return null;
   }
 
   if (
-    !Number.isFinite(x) ||
-    !Number.isFinite(y)
+    latitude < 24 ||
+    latitude > 50 ||
+    longitude < -130 ||
+    longitude > -60
   ) {
-    return false;
+    return null;
   }
 
-  if (
-    x < -180 ||
-    x > 180 ||
-    y < -90 ||
-    y > 90
-  ) {
-    return false;
-  }
+  return {
 
-  const title = getTitle(a);
-  const date = getDate(a);
-  const city = getCity(a);
-  const state = getState(a);
-  const description = getDescription(a);
-  const fatalities = getFatalities(a);
-  const injuries = getInjuries(a);
+    date: cleanDate(row),
 
-  const location =
-    [city, state]
-      .filter(Boolean)
-      .join(", ") ||
-    "Location unavailable";
+    city:
+      row.city ||
+      row.location ||
+      "Unknown",
 
-  const popup = `
-    <div style="
-      max-width:340px;
-      font-family:Arial,sans-serif;
-      line-height:1.45;
-    ">
+    state:
+      row.provstate ||
+      row.province ||
+      "",
 
-      <h3 style="
-        margin:0 0 10px 0;
-        font-size:18px;
-      ">
-        ${escapeHtml(title)}
-      </h3>
+    latitude,
+    longitude,
 
-      <div>
-        <strong>Category:</strong>
-        Terrorism / extremist violence
-      </div>
+    killed:
+      number(row.nkill),
 
-      <div>
-        <strong>Date:</strong>
-        ${escapeHtml(formatDate(date))}
-      </div>
+    injured:
+      number(row.nwound),
 
-      <div>
-        <strong>Location:</strong>
-        ${escapeHtml(location)}
-      </div>
+    attackType:
+      row.attacktype1_txt ||
+      "Terrorism",
 
-      ${
-        fatalities !== ""
-          ? `
-            <div>
-              <strong>Fatalities:</strong>
-              ${escapeHtml(fatalities)}
-            </div>
-          `
-          : ""
-      }
+    target:
+      row.targtype1_txt ||
+      "",
 
-      ${
-        injuries !== ""
-          ? `
-            <div>
-              <strong>Injuries:</strong>
-              ${escapeHtml(injuries)}
-            </div>
-          `
-          : ""
-      }
+    perpetrator:
+      row.gname ||
+      "Unknown",
 
-      ${
-        description
-          ? `
-            <p>
-              ${escapeHtml(description)}
-            </p>
-          `
-          : ""
-      }
+    summary:
+      row.summary ||
+      "",
 
-      <hr>
+    category: "terrorism",
 
-      <small>
-        Source: S2 Underground Incident Response Team,
-        Domestic Terrorism Tracker.
-      </small>
+    source: "Global Terrorism Database-derived data"
 
-    </div>
-  `;
-
-  const marker = L.circleMarker(
-    [y, x],
-    {
-      radius: 7,
-      weight: 2,
-      fillOpacity: 0.75
-    }
-  );
-
-  marker.bindPopup(popup);
-
-  marker.addTo(markers);
-
-  return true;
+  };
 }
 
-async function requestPage(offset) {
-  const params = new URLSearchParams();
-
-  params.set("where", "1=1");
-  params.set("outFields", "*");
-  params.set("returnGeometry", "true");
-  params.set("outSR", "4326");
-  params.set("f", "json");
-
-  /*
-    ArcGIS permits up to 2,000 records per request.
-  */
-
-  params.set("resultOffset", String(offset));
-  params.set("resultRecordCount", "2000");
-
-  const response = await fetch(
-    DATA_URL + "?" + params.toString()
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "ArcGIS request failed: HTTP " +
-      response.status
-    );
-  }
-
-  const data = await response.json();
-
-  if (data.error) {
-    throw new Error(
-      data.error.message ||
-      "ArcGIS returned an error."
-    );
-  }
-
-  return data;
-}
 
 async function loadData() {
-  const status =
-    document.getElementById("status");
 
-  if (status) {
-    status.textContent =
-      "Loading public terrorism dataset…";
-  }
+  const status = document.getElementById("status");
+
+  status.textContent =
+    "Loading historical terrorism incidents from the public dataset...";
 
   try {
-    let offset = 0;
-    let total = 0;
 
-    while (true) {
-      const data =
-        await requestPage(offset);
+    const response = await fetch(DATA_URL);
 
-      const features =
-        data.features || [];
-
-      if (features.length === 0) {
-        break;
-      }
-
-      allIncidents.push(...features);
-
-      total += features.length;
-
-      if (status) {
-        status.textContent =
-          "Loading incidents… " +
-          total.toLocaleString();
-      }
-
-      /*
-        Continue if ArcGIS tells us there
-        are more records.
-      */
-
-      if (
-        data.exceededTransferLimit !== true &&
-        features.length < 2000
-      ) {
-        break;
-      }
-
-      offset += features.length;
-
-      /*
-        Protection against an unexpected
-        infinite loop.
-      */
-
-      if (offset >= 100000) {
-        break;
-      }
+    if (!response.ok) {
+      throw new Error(
+        `Dataset returned HTTP ${response.status}`
+      );
     }
 
-    markers.clearLayers();
+    const text = await response.text();
 
-    let mapped = 0;
+    const parsed = parseCSV(text);
 
-    for (const incident of allIncidents) {
-      if (addIncident(incident)) {
-        mapped++;
-      }
-    }
+    const normalized = parsed
+      .map(normalize)
+      .filter(Boolean);
 
-    if (status) {
-      status.innerHTML = `
-        <strong>
-          ${mapped.toLocaleString()}
-        </strong>
-        incidents mapped
-        &nbsp;•&nbsp;
-        ${allIncidents.length.toLocaleString()}
-        records retrieved
-      `;
-    }
+    /*
+     * Only keep United States incidents.
+     *
+     * The source file contains multiple countries.
+     * The geographic bounds above additionally prevent
+     * obviously non-U.S. records from appearing.
+     */
+    allIncidents = normalized;
 
-    console.log(
-      "Terrorism records retrieved:",
-      allIncidents.length
-    );
+    populateYears();
 
-    console.log(
-      "Terrorism records mapped:",
-      mapped
-    );
+    render();
 
-    console.log(
-      "First record:",
-      allIncidents[0]
-    );
+    status.textContent =
+      `Loaded ${allIncidents.length.toLocaleString()} mapped U.S. incidents.`;
 
   } catch (error) {
 
-    console.error(
-      "Terrorism data error:",
-      error
-    );
+    console.error(error);
 
-    if (status) {
-      status.innerHTML = `
+    status.innerHTML =
+      `<strong>Unable to load the incident dataset.</strong><br>
+       ${error.message}`;
+
+  }
+
+}
+
+
+function populateYears() {
+
+  const select = document.getElementById("year");
+
+  const years = [
+    ...new Set(
+      allIncidents
+        .map(i => i.date.substring(0, 4))
+        .filter(y => /^\d{4}$/.test(y))
+    )
+  ].sort();
+
+  for (const year of years) {
+
+    const option = document.createElement("option");
+
+    option.value = year;
+    option.textContent = year;
+
+    select.appendChild(option);
+  }
+
+}
+
+
+function getFilteredIncidents() {
+
+  const category =
+    document.getElementById("category").value;
+
+  const year =
+    document.getElementById("year").value;
+
+  return allIncidents.filter(incident => {
+
+    if (
+      category !== "all" &&
+      incident.category !== category
+    ) {
+      return false;
+    }
+
+    if (
+      year !== "all" &&
+      !incident.date.startsWith(year)
+    ) {
+      return false;
+    }
+
+    return true;
+
+  });
+
+}
+
+
+function clearMarkers() {
+  markers.clearLayers();
+}
+
+
+function render() {
+
+  clearMarkers();
+
+  const incidents =
+    getFilteredIncidents();
+
+  let deaths = 0;
+  let injuries = 0;
+
+  const list =
+    document.getElementById("incidentList");
+
+  list.innerHTML = "";
+
+  /*
+   * Draw map markers.
+   */
+  incidents.forEach(incident => {
+
+    deaths += incident.killed;
+    injuries += incident.injured;
+
+    const marker =
+      L.circleMarker(
+        [
+          incident.latitude,
+          incident.longitude
+        ],
+        {
+          radius:
+            incident.killed > 0
+              ? Math.min(
+                  12,
+                  5 + Math.sqrt(incident.killed)
+                )
+              : 5,
+
+          fillOpacity: 0.65,
+
+          weight: 1
+        }
+      );
+
+    marker.bindPopup(`
+
+      <div style="min-width:220px">
+
         <strong>
-          Unable to load the terrorism dataset.
+          ${escapeHTML(incident.city)}
+          ${incident.state
+            ? ", " + escapeHTML(incident.state)
+            : ""}
         </strong>
+
         <br><br>
-        ${escapeHtml(error.message)}
+
+        <strong>Date:</strong>
+        ${escapeHTML(incident.date)}
+
+        <br>
+
+        <strong>Attack type:</strong>
+        ${escapeHTML(incident.attackType)}
+
+        <br>
+
+        <strong>Killed:</strong>
+        ${incident.killed}
+
+        <br>
+
+        <strong>Injured:</strong>
+        ${incident.injured}
+
+        ${
+          incident.target
+            ? `<br><strong>Target:</strong>
+               ${escapeHTML(incident.target)}`
+            : ""
+        }
+
+        ${
+          incident.perpetrator
+            ? `<br><strong>Group/Perpetrator:</strong>
+               ${escapeHTML(incident.perpetrator)}`
+            : ""
+        }
+
+        ${
+          incident.summary
+            ? `<br><br>${escapeHTML(incident.summary)}`
+            : ""
+        }
+
+        <br><br>
+
+        <small>
+          Source: Global Terrorism Database-derived data
+        </small>
+
+      </div>
+
+    `);
+
+    marker.addTo(markers);
+
+  });
+
+
+  /*
+   * Statistics.
+   */
+  document.getElementById(
+    "incidentCount"
+  ).textContent =
+    incidents.length.toLocaleString();
+
+  document.getElementById(
+    "deathCount"
+  ).textContent =
+    deaths.toLocaleString();
+
+  document.getElementById(
+    "injuryCount"
+  ).textContent =
+    injuries.toLocaleString();
+
+
+  /*
+   * Incident list.
+   *
+   * Limit the displayed list so a large historical
+   * dataset does not make the browser sluggish.
+   */
+  const displayLimit = 500;
+
+  incidents
+    .slice()
+    .sort((a, b) =>
+      b.date.localeCompare(a.date)
+    )
+    .slice(0, displayLimit)
+    .forEach(incident => {
+
+      const div =
+        document.createElement("div");
+
+      div.className = "incident";
+
+      div.innerHTML = `
+
+        <strong>
+          ${escapeHTML(incident.date)}
+          —
+          ${escapeHTML(incident.city)}
+          ${incident.state
+            ? ", " + escapeHTML(incident.state)
+            : ""}
+        </strong>
+
+        ${escapeHTML(incident.attackType)}
+
+        <br>
+
+        Killed: ${incident.killed}
+        &nbsp; | &nbsp;
+        Injured: ${incident.injured}
+
       `;
-    }
-  }
+
+      div.addEventListener(
+        "click",
+        () => {
+
+          map.setView(
+            [
+              incident.latitude,
+              incident.longitude
+            ],
+            10
+          );
+
+        }
+      );
+
+      list.appendChild(div);
+
+    });
+
 }
 
-function initializeMap() {
 
-  if (
-    typeof L === "undefined"
-  ) {
-    console.error(
-      "Leaflet has not loaded."
-    );
+function escapeHTML(value) {
 
-    return;
-  }
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 
-  map = L.map("map").setView(
-    [39.8283, -98.5795],
-    4
-  );
-
-  L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {
-      attribution:
-        "&copy; OpenStreetMap contributors"
-    }
-  ).addTo(map);
-
-  markers =
-    L.layerGroup().addTo(map);
-
-  loadData();
 }
 
-document.addEventListener(
-  "DOMContentLoaded",
-  initializeMap
-);
+
+document
+  .getElementById("category")
+  .addEventListener("change", render);
+
+
+document
+  .getElementById("year")
+  .addEventListener("change", render);
+
+
+document
+  .getElementById("reset")
+  .addEventListener("click", () => {
+
+    document.getElementById("category").value = "all";
+
+    document.getElementById("year").value = "all";
+
+    render();
+
+  });
+
+
+loadData();
