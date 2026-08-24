@@ -1,58 +1,29 @@
-/*
-  U.S. POLITICAL VIOLENCE & TERRORISM MAP
-
-  Primary public source:
-  S2 Underground Incident Response Team
-  ArcGIS Domestic Terrorism Tracker
-
-  The source describes this as a master list of high-profile
-  terror attacks in the United States that meet its stated
-  FBI-based definition.
-
-  This page labels those records "Terrorism / extremist violence"
-  rather than presenting them as a complete census of all
-  political violence in the United States.
-*/
-
-const TERRORISM_URL =
+const DATA_URL =
   "https://services.arcgis.com/OeCRCKr7XFYQNdyJ/arcgis/rest/services/Domestic_Terrorism_Tracker/FeatureServer/1/query";
 
-const map = L.map("map").setView([39.8283, -98.5795], 4);
-
-L.tileLayer(
-  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-  {
-    attribution:
-      '&copy; OpenStreetMap contributors'
-  }
-).addTo(map);
-
-const markers = L.layerGroup().addTo(map);
-
-const statusElement = document.getElementById("status");
+let map;
+let markers;
+let allIncidents = [];
 
 function escapeHtml(value) {
-  if (value === null || value === undefined) {
-    return "";
-  }
+  if (value === null || value === undefined) return "";
 
   return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-function firstValue(attributes, possibleNames) {
-  for (const name of possibleNames) {
+function getValue(a, names) {
+  for (const name of names) {
     if (
-      attributes &&
-      attributes[name] !== undefined &&
-      attributes[name] !== null &&
-      attributes[name] !== ""
+      a[name] !== undefined &&
+      a[name] !== null &&
+      a[name] !== ""
     ) {
-      return attributes[name];
+      return a[name];
     }
   }
 
@@ -60,168 +31,207 @@ function firstValue(attributes, possibleNames) {
 }
 
 function formatDate(value) {
-  if (!value) {
-    return "Date not available";
-  }
+  if (!value) return "Date unavailable";
 
-  const date = new Date(value);
+  const d = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  if (isNaN(d.getTime())) {
     return String(value);
   }
 
-  return date.toLocaleDateString("en-US", {
+  return d.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric"
   });
 }
 
-function createMarker(feature) {
-  const attributes = feature.attributes || {};
-  const geometry = feature.geometry || {};
+function getTitle(a) {
+  return getValue(a, [
+    "Incident_Name",
+    "incident_name",
+    "Incident",
+    "incident",
+    "Name",
+    "name",
+    "Title",
+    "title",
+    "Attack",
+    "attack"
+  ]) || "Terrorism incident";
+}
 
-  let latitude = geometry.y;
-  let longitude = geometry.x;
-
-  /*
-    ArcGIS can sometimes return Web Mercator coordinates.
-    Convert them to latitude/longitude when necessary.
-  */
-
-  if (
-    Math.abs(latitude) > 90 ||
-    Math.abs(longitude) > 180
-  ) {
-    const earthRadius = 6378137;
-
-    longitude =
-      (longitude / earthRadius) * (180 / Math.PI);
-
-    latitude =
-      (2 *
-        Math.atan(
-          Math.exp(latitude / earthRadius)
-        ) -
-        Math.PI / 2) *
-      (180 / Math.PI);
-  }
-
-  if (
-    typeof latitude !== "number" ||
-    typeof longitude !== "number" ||
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude)
-  ) {
-    return false;
-  }
-
-  const date = firstValue(attributes, [
+function getDate(a) {
+  return getValue(a, [
+    "Incident_Date",
+    "incident_date",
     "Date",
     "DATE",
     "date",
-    "Incident_Date",
-    "incident_date",
     "Attack_Date",
     "attack_date"
   ]);
+}
 
-  const city = firstValue(attributes, [
+function getCity(a) {
+  return getValue(a, [
     "City",
     "CITY",
     "city",
     "Location",
     "location"
   ]);
+}
 
-  const state = firstValue(attributes, [
+function getState(a) {
+  return getValue(a, [
     "State",
     "STATE",
     "state",
     "State_Name",
     "state_name"
   ]);
+}
 
-  const title = firstValue(attributes, [
-    "Name",
-    "NAME",
-    "name",
-    "Incident",
-    "incident",
-    "Incident_Name",
-    "incident_name",
-    "Attack",
-    "attack",
-    "Title",
-    "title"
-  ]);
-
-  const description = firstValue(attributes, [
+function getDescription(a) {
+  return getValue(a, [
     "Description",
-    "DESCRIPTION",
     "description",
+    "DESCRIPTION",
     "Details",
     "details",
     "Summary",
     "summary"
   ]);
+}
 
-  const fatalities = firstValue(attributes, [
+function getFatalities(a) {
+  return getValue(a, [
     "Fatalities",
-    "FATALITIES",
     "fatalities",
+    "FATALITIES",
     "Killed",
     "killed",
     "Deaths",
     "deaths"
   ]);
+}
 
-  const injuries = firstValue(attributes, [
+function getInjuries(a) {
+  return getValue(a, [
     "Injuries",
-    "INJURIES",
     "injuries",
+    "INJURIES",
     "Wounded",
     "wounded"
   ]);
+}
+
+function addIncident(feature) {
+  if (!feature || !feature.geometry) return false;
+
+  const a = feature.attributes || {};
+
+  let x = feature.geometry.x;
+  let y = feature.geometry.y;
+
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number"
+  ) {
+    return false;
+  }
+
+  /*
+    The ArcGIS service uses Web Mercator (EPSG:3857).
+    Convert to normal longitude/latitude.
+  */
+
+  if (
+    Math.abs(x) > 180 ||
+    Math.abs(y) > 90
+  ) {
+    const R = 6378137;
+
+    x =
+      (x / R) *
+      (180 / Math.PI);
+
+    y =
+      (2 *
+        Math.atan(
+          Math.exp(y / R)
+        ) -
+        Math.PI / 2) *
+      (180 / Math.PI);
+  }
+
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y)
+  ) {
+    return false;
+  }
+
+  if (
+    x < -180 ||
+    x > 180 ||
+    y < -90 ||
+    y > 90
+  ) {
+    return false;
+  }
+
+  const title = getTitle(a);
+  const date = getDate(a);
+  const city = getCity(a);
+  const state = getState(a);
+  const description = getDescription(a);
+  const fatalities = getFatalities(a);
+  const injuries = getInjuries(a);
 
   const location =
     [city, state]
       .filter(Boolean)
       .join(", ") ||
-    "Location not available";
-
-  const incidentTitle =
-    title ||
-    "Terrorism / extremist violence incident";
+    "Location unavailable";
 
   const popup = `
-    <div style="max-width:320px">
-      <h3 style="margin-top:0">
-        ${escapeHtml(incidentTitle)}
+    <div style="
+      max-width:340px;
+      font-family:Arial,sans-serif;
+      line-height:1.45;
+    ">
+
+      <h3 style="
+        margin:0 0 10px 0;
+        font-size:18px;
+      ">
+        ${escapeHtml(title)}
       </h3>
 
-      <p>
+      <div>
         <strong>Category:</strong>
         Terrorism / extremist violence
-      </p>
+      </div>
 
-      <p>
+      <div>
         <strong>Date:</strong>
         ${escapeHtml(formatDate(date))}
-      </p>
+      </div>
 
-      <p>
+      <div>
         <strong>Location:</strong>
         ${escapeHtml(location)}
-      </p>
+      </div>
 
       ${
         fatalities !== ""
           ? `
-            <p>
+            <div>
               <strong>Fatalities:</strong>
               ${escapeHtml(fatalities)}
-            </p>
+            </div>
           `
           : ""
       }
@@ -229,10 +239,10 @@ function createMarker(feature) {
       ${
         injuries !== ""
           ? `
-            <p>
+            <div>
               <strong>Injuries:</strong>
               ${escapeHtml(injuries)}
-            </p>
+            </div>
           `
           : ""
       }
@@ -253,11 +263,12 @@ function createMarker(feature) {
         Source: S2 Underground Incident Response Team,
         Domestic Terrorism Tracker.
       </small>
+
     </div>
   `;
 
   const marker = L.circleMarker(
-    [latitude, longitude],
+    [y, x],
     {
       radius: 7,
       weight: 2,
@@ -272,58 +283,87 @@ function createMarker(feature) {
   return true;
 }
 
-async function loadTerrorismData() {
-  statusElement.textContent =
-    "Loading terrorism and political-violence records…";
+async function requestPage(offset) {
+  const params = new URLSearchParams();
+
+  params.set("where", "1=1");
+  params.set("outFields", "*");
+  params.set("returnGeometry", "true");
+  params.set("outSR", "4326");
+  params.set("f", "json");
+
+  /*
+    ArcGIS permits up to 2,000 records per request.
+  */
+
+  params.set("resultOffset", String(offset));
+  params.set("resultRecordCount", "2000");
+
+  const response = await fetch(
+    DATA_URL + "?" + params.toString()
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      "ArcGIS request failed: HTTP " +
+      response.status
+    );
+  }
+
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(
+      data.error.message ||
+      "ArcGIS returned an error."
+    );
+  }
+
+  return data;
+}
+
+async function loadData() {
+  const status =
+    document.getElementById("status");
+
+  if (status) {
+    status.textContent =
+      "Loading public terrorism dataset…";
+  }
 
   try {
-    /*
-      Ask ArcGIS for every available record.
-
-      resultRecordCount is deliberately below the service's
-      maximum record count, and pagination is handled below.
-    */
-
-    let allFeatures = [];
     let offset = 0;
+    let total = 0;
 
     while (true) {
-      const params = new URLSearchParams({
-        where: "1=1",
-        outFields: "*",
-        returnGeometry: "true",
-        outSR: "4326",
-        f: "json",
-        resultOffset: String(offset),
-        resultRecordCount: "2000"
-      });
+      const data =
+        await requestPage(offset);
 
-      const response = await fetch(
-        `${TERRORISM_URL}?${params.toString()}`
-      );
+      const features =
+        data.features || [];
 
-      if (!response.ok) {
-        throw new Error(
-          `HTTP ${response.status}`
-        );
+      if (features.length === 0) {
+        break;
       }
 
-      const data = await response.json();
+      allIncidents.push(...features);
 
-      if (data.error) {
-        throw new Error(
-          data.error.message ||
-          "ArcGIS returned an error."
-        );
+      total += features.length;
+
+      if (status) {
+        status.textContent =
+          "Loading incidents… " +
+          total.toLocaleString();
       }
 
-      const features = data.features || [];
-
-      allFeatures.push(...features);
+      /*
+        Continue if ArcGIS tells us there
+        are more records.
+      */
 
       if (
-        features.length < 2000 ||
-        data.exceededTransferLimit !== true
+        data.exceededTransferLimit !== true &&
+        features.length < 2000
       ) {
         break;
       }
@@ -331,53 +371,103 @@ async function loadTerrorismData() {
       offset += features.length;
 
       /*
-        Safety limit so a future dataset change cannot cause
-        an accidental endless request loop.
+        Protection against an unexpected
+        infinite loop.
       */
-      if (offset > 50000) {
+
+      if (offset >= 100000) {
         break;
       }
     }
 
     markers.clearLayers();
 
-    let plotted = 0;
+    let mapped = 0;
 
-    for (const feature of allFeatures) {
-      if (createMarker(feature)) {
-        plotted++;
+    for (const incident of allIncidents) {
+      if (addIncident(incident)) {
+        mapped++;
       }
     }
 
-    statusElement.innerHTML = `
-      <strong>${plotted.toLocaleString()}</strong>
-      mapped incidents
-      &nbsp;•&nbsp;
-      Public terrorism dataset
-    `;
-
-    /*
-      If records exist but none have coordinates, make that
-      obvious rather than silently displaying an empty map.
-    */
-
-    if (allFeatures.length > 0 && plotted === 0) {
-      statusElement.innerHTML = `
-        ${allFeatures.length.toLocaleString()}
-        records were returned, but none contained usable
-        map coordinates.
+    if (status) {
+      status.innerHTML = `
+        <strong>
+          ${mapped.toLocaleString()}
+        </strong>
+        incidents mapped
+        &nbsp;•&nbsp;
+        ${allIncidents.length.toLocaleString()}
+        records retrieved
       `;
     }
 
-  } catch (error) {
-    console.error(error);
+    console.log(
+      "Terrorism records retrieved:",
+      allIncidents.length
+    );
 
-    statusElement.innerHTML = `
-      <strong>Unable to load the incident data.</strong>
-      <br>
-      Please refresh the page and try again.
-    `;
+    console.log(
+      "Terrorism records mapped:",
+      mapped
+    );
+
+    console.log(
+      "First record:",
+      allIncidents[0]
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Terrorism data error:",
+      error
+    );
+
+    if (status) {
+      status.innerHTML = `
+        <strong>
+          Unable to load the terrorism dataset.
+        </strong>
+        <br><br>
+        ${escapeHtml(error.message)}
+      `;
+    }
   }
 }
 
-loadTerrorismData();
+function initializeMap() {
+
+  if (
+    typeof L === "undefined"
+  ) {
+    console.error(
+      "Leaflet has not loaded."
+    );
+
+    return;
+  }
+
+  map = L.map("map").setView(
+    [39.8283, -98.5795],
+    4
+  );
+
+  L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      attribution:
+        "&copy; OpenStreetMap contributors"
+    }
+  ).addTo(map);
+
+  markers =
+    L.layerGroup().addTo(map);
+
+  loadData();
+}
+
+document.addEventListener(
+  "DOMContentLoaded",
+  initializeMap
+);
