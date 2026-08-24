@@ -10,12 +10,10 @@
 
   <title>U.S. Domestic Terrorism Attacks</title>
 
-  <!-- Leaflet -->
+  <!-- Leaflet map library -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIINfQ3u4wJ6LqH6k8dK9J6u6x6Yf6K6G6M="
-    crossorigin=""
   >
 
   <style>
@@ -81,7 +79,7 @@
       line-height: 1.6;
     }
 
-    .stats {
+    #stats {
       background: white;
       border: 1px solid #ddd;
       border-radius: 8px;
@@ -99,7 +97,7 @@
       overflow: hidden;
     }
 
-    .source {
+    #source {
       background: white;
       border: 1px solid #ddd;
       border-radius: 8px;
@@ -109,7 +107,7 @@
       line-height: 1.6;
     }
 
-    .source a {
+    #source a {
       color: #0645ad;
     }
 
@@ -145,7 +143,7 @@
       <h1>U.S. Domestic Terrorism Attacks</h1>
 
       <p class="subtitle">
-        An interactive map of terrorism incidents in the United States.
+        Interactive map of recorded terrorism incidents in the United States.
       </p>
     </div>
   </header>
@@ -153,53 +151,57 @@
   <main>
 
     <section class="intro">
+
       <h2>About this map</h2>
 
       <p>
         Each point on the map represents a recorded terrorism incident
-        in the United States contained in the underlying dataset.
-        Select a point to see the available information about that incident.
+        contained in the underlying dataset.
       </p>
 
       <p>
-        The map is intended as a research and educational visualization.
-        The presence of an incident in the dataset does not by itself
-        establish a particular legal classification or motive.
+        Select a point to view the information available for that incident.
       </p>
+
+      <p>
+        This visualization is intended for research and educational purposes.
+        Inclusion in the dataset does not by itself establish a particular
+        legal classification, motive, or conclusion about an incident.
+      </p>
+
     </section>
 
-    <section
-      id="stats"
-      class="stats"
-    >
+    <section id="stats">
       Loading incident statistics...
     </section>
 
-    <section id="map"></section>
+    <section id="map">
+      <div style="
+        padding: 20px;
+        font-family: system-ui, sans-serif;
+      ">
+        Loading map...
+      </div>
+    </section>
 
-    <section
-      id="source"
-      class="source"
-    >
+    <section id="source">
       Loading source information...
     </section>
 
   </main>
 
   <footer>
-    Data should be interpreted according to the methodology and
-    definitions of the underlying source. Geographic locations may
-    represent approximate locations rather than exact coordinates.
+    Data should be interpreted according to the methodology and definitions
+    of the underlying source. Geographic locations may represent approximate
+    locations rather than exact coordinates.
   </footer>
 
-  <!-- Leaflet JavaScript -->
+  <!-- Leaflet -->
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
   ></script>
 
-  <!-- Our terrorism application -->
+  <!-- Terrorism application -->
   <script src="terrorism.js"></script>
 
 </body>
