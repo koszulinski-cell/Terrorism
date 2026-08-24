@@ -1,1 +1,22 @@
-
+{
+  "source": "Domestic Terrorism Tracker",
+  "sourceUrl": "https://services.arcgis.com/OeCRCKr7XFYQNdyJ/arcgis/rest/services/Domestic_Terrorism_Tracker/FeatureServer",
+  "definition": "Incidents included by the source dataset under its definition of terror attacks.",
+  "updated": "2026-08-23",
+  "incidents": [
+    {
+      "id": "example-001",
+      "date": "2020-05-01",
+      "city": "Washington",
+      "state": "DC",
+      "latitude": 38.9072,
+      "longitude": -77.0369,
+      "title": "Example incident",
+      "description": "Example record used to verify the map interface.",
+      "fatalities": 0,
+      "injuries": 0,
+      "category": "Example",
+      "source": "Domestic Terrorism Tracker"
+    }
+  ]
+}
