@@ -1,1 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <title>U.S. Domestic Terrorism Attacks</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f5f5f5;
+      color: #111;
+    }
+
+    header {
+      background: #111;
+      color: white;
+      padding: 24px 20px;
+    }
+
+    header h1 {
+      margin: 0 0 8px 0;
+      font-size: 30px;
+    }
+
+    header p {
+      margin: 0;
+      color: #ccc;
+      font-size: 15px;
+    }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.08);
+    }
+
+    .card-label {
+      font-size: 13px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 8px;
+    }
+
+    .card-value {
+      font-size: 32px;
+      font-weight: bold;
+    }
+
+    .map-container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.08);
+      margin-bottom: 20px;
+    }
+
+    #map {
+      width: 100%;
+      height: 600px;
+      border-radius: 8px;
+      background: #ddd;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    select,
+    input {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: white;
+      font-size: 14px;
+    }
+
+    .table-container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.08);
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 11px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      font-size: 14px;
+    }
+
+    th {
+      background: #fafafa;
+      font-weight: bold;
+    }
+
+    tr:hover {
+      background: #f8f8f8;
+    }
+
+    .source {
+      margin-top: 20px;
+      color: #666;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .source a {
+      color: #111;
+    }
+
+    .error {
+      background: #fff0f0;
+      border: 1px solid #e0aaaa;
+      padding: 15px;
+      border-radius: 8px;
+      color: #8a0000;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 800px) {
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      #map {
+        height: 450px;
+      }
+    }
+  </style>
+
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+</head>
+
+<body>
+
+<header>
+  <h1>U.S. Domestic Terrorism Attacks</h1>
+  <p>
+    An interactive map and dataset of documented domestic terrorism incidents
+    in the United States.
+  </p>
+</header>
+
+<main>
+
+  <div id="error"></div>
+
+  <section class="stats">
+
+    <div class="card">
+      <div class="card-label">Total attacks</div>
+      <div class="card-value" id="totalAttacks">—</div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">People killed</div>
+      <div class="card-value" id="totalKilled">—</div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">People injured</div>
+      <div class="card-value" id="totalInjured">—</div>
+    </div>
+
+  </section>
+
+
+  <section class="map-container">
+
+    <h2>Interactive map</h2>
+
+    <div class="controls">
+
+      <select id="yearFilter">
+        <option value="all">All years</option>
+      </select>
+
+      <select id="stateFilter">
+        <option value="all">All states</option>
+      </select>
+
+      <input
+        id="search"
+        type="search"
+        placeholder="Search incidents..."
+      >
+
+    </div>
+
+    <div id="map"></div>
+
+  </section>
+
+
+  <section class="table-container">
+
+    <h2>Incidents</h2>
+
+    <table>
+
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Location</th>
+          <th>State</th>
+          <th>Description</th>
+          <th>Killed</th>
+          <th>Injured</th>
+        </tr>
+      </thead>
+
+      <tbody id="incidentTable"></tbody>
+
+    </table>
+
+  </section>
+
+
+  <div class="source">
+
+    <strong>About this dataset</strong><br>
+
+    This page presents a compiled dataset of documented domestic terrorism
+    incidents in the United States. Classification and inclusion depend on
+    the underlying source dataset and its methodology; an incident appearing
+    here does not necessarily mean that every government agency or court
+    formally classified it as domestic terrorism.
+
+    <br><br>
+
+    <strong>Data source:</strong>
+    <span id="sourceText">Loading...</span>
+
+    <br><br>
+
+    This project is intended for research, education and public information.
+
+  </div>
+
+</main>
+
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+
+let incidents = [];
+let map;
+let markers = [];
+
+
+// --------------------------------------------------
+// Load data
+// --------------------------------------------------
+
+async function loadData() {
+
+  try {
+
+    const response = await fetch("terrorism-data.json");
+
+    if (!response.ok) {
+      throw new Error("Could not load terrorism-data.json");
+    }
+
+    const data = await response.json();
+
+    /*
+     * Supports either:
+     *
+     * [
+     *   {...},
+     *   {...}
+     * ]
+     *
+     * OR:
+     *
+     * {
+     *   incidents: [...]
+     * }
+     */
+
+    if (Array.isArray(data)) {
+      incidents = data;
+    } else if (Array.isArray(data.incidents)) {
+      incidents = data.incidents;
+    } else {
+      throw new Error("The terrorism dataset format was not recognized.");
+    }
+
+    initialize();
+
+  } catch (error) {
+
+    document.getElementById("error").innerHTML =
+      `<div class="error">
+        <strong>Unable to load the terrorism dataset.</strong><br>
+        ${error.message}
+      </div>`;
+
+    console.error(error);
+  }
+
+}
+
+
+// --------------------------------------------------
+// Initialize
+// --------------------------------------------------
+
+function initialize() {
+
+  initializeMap();
+
+  populateFilters();
+
+  updatePage();
+
+}
+
+
+// --------------------------------------------------
+// Map
+// --------------------------------------------------
+
+function initializeMap() {
+
+  map = L.map("map").setView([39.8283, -98.5795], 4);
+
+  L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+    }
+  ).addTo(map);
+
+}
+
+
+// --------------------------------------------------
+// Filters
+// --------------------------------------------------
+
+function populateFilters() {
+
+  const years = new Set();
+  const states = new Set();
+
+  incidents.forEach(incident => {
+
+    const year = getYear(incident);
+
+    if (year) {
+      years.add(year);
+    }
+
+    const state =
+      incident.state ||
+      incident.State ||
+      incident.state_name;
+
+    if (state) {
+      states.add(state);
+    }
+
+  });
+
+
+  const yearSelect =
+    document.getElementById("yearFilter");
+
+  [...years]
+    .sort((a,b) => b-a)
+    .forEach(year => {
+
+      const option = document.createElement("option");
+
+      option.value = year;
+      option.textContent = year;
+
+      yearSelect.appendChild(option);
+
+    });
+
+
+  const stateSelect =
+    document.getElementById("stateFilter");
+
+  [...states]
+    .sort()
+    .forEach(state => {
+
+      const option = document.createElement("option");
+
+      option.value = state;
+      option.textContent = state;
+
+      stateSelect.appendChild(option);
+
+    });
+
+
+  yearSelect.addEventListener("change", updatePage);
+  stateSelect.addEventListener("change", updatePage);
+
+  document
+    .getElementById("search")
+    .addEventListener("input", updatePage);
+
+}
+
+
+// --------------------------------------------------
+// Get year
+// --------------------------------------------------
+
+function getYear(incident) {
+
+  const date =
+    incident.date ||
+    incident.Date ||
+    incident.incident_date ||
+    incident.year ||
+    incident.Year;
+
+  if (!date) return null;
+
+  if (
+    typeof date === "number" &&
+    date > 1900 &&
+    date < 2100
+  ) {
+    return date;
+  }
+
+  const match =
+    String(date).match(/\b(19|20)\d{2}\b/);
+
+  return match ? Number(match[0]) : null;
+
+}
+
+
+// --------------------------------------------------
+// Filter incidents
+// --------------------------------------------------
+
+function getFilteredIncidents() {
+
+  const year =
+    document.getElementById("yearFilter").value;
+
+  const state =
+    document.getElementById("stateFilter").value;
+
+  const search =
+    document
+      .getElementById("search")
+      .value
+      .toLowerCase()
+      .trim();
+
+
+  return incidents.filter(incident => {
+
+    const incidentYear =
+      String(getYear(incident) || "");
+
+    const incidentState =
+      incident.state ||
+      incident.State ||
+      incident.state_name ||
+      "";
+
+    const text =
+      JSON.stringify(incident).toLowerCase();
+
+
+    if (
+      year !== "all" &&
+      incidentYear !== year
+    ) {
+      return false;
+    }
+
+
+    if (
+      state !== "all" &&
+      incidentState !== state
+    ) {
+      return false;
+    }
+
+
+    if (
+      search &&
+      !text.includes(search)
+    ) {
+      return false;
+    }
+
+
+    return true;
+
+  });
+
+}
+
+
+// --------------------------------------------------
+// Update everything
+// --------------------------------------------------
+
+function updatePage() {
+
+  const filtered =
+    getFilteredIncidents();
+
+  updateStats(filtered);
+
+  updateMap(filtered);
+
+  updateTable(filtered);
+
+}
+
+
+// --------------------------------------------------
+// Statistics
+// --------------------------------------------------
+
+function updateStats(data) {
+
+  document.getElementById("totalAttacks")
+    .textContent =
+      data.length.toLocaleString();
+
+
+  let killed = 0;
+  let injured = 0;
+
+
+  data.forEach(incident => {
+
+    killed += getNumber(
+      incident.killed ??
+      incident.deaths ??
+      incident.fatalities ??
+      incident.Killed
+    );
+
+
+    injured += getNumber(
+      incident.injured ??
+      incident.wounded ??
+      incident.Injured
+    );
+
+  });
+
+
+  document.getElementById("totalKilled")
+    .textContent =
+      killed.toLocaleString();
+
+
+  document.getElementById("totalInjured")
+    .textContent =
+      injured.toLocaleString();
+
+}
+
+
+// --------------------------------------------------
+// Numbers
+// --------------------------------------------------
+
+function getNumber(value) {
+
+  const n = Number(value);
+
+  return Number.isFinite(n) ? n : 0;
+
+}
+
+
+// --------------------------------------------------
+// Map markers
+// --------------------------------------------------
+
+function updateMap(data) {
+
+  markers.forEach(marker =>
+    map.removeLayer(marker)
+  );
+
+  markers = [];
+
+
+  data.forEach(incident => {
+
+    const lat =
+      Number(
+        incident.latitude ??
+        incident.lat ??
+        incident.Latitude
+      );
+
+    const lon =
+      Number(
+        incident.longitude ??
+        incident.lon ??
+        incident.lng ??
+        incident.Longitude
+      );
+
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon)
+    ) {
+      return;
+    }
+
+
+    const date =
+      incident.date ||
+      incident.Date ||
+      incident.incident_date ||
+      "";
+
+
+    const city =
+      incident.city ||
+      incident.City ||
+      "";
+
+
+    const state =
+      incident.state ||
+      incident.State ||
+      "";
+
+
+    const description =
+      incident.description ||
+      incident.Description ||
+      incident.summary ||
+      incident.Summary ||
+      "No description available.";
+
+
+    const killed =
+      getNumber(
+        incident.killed ??
+        incident.deaths ??
+        incident.fatalities
+      );
+
+
+    const injured =
+      getNumber(
+        incident.injured ??
+        incident.wounded
+      );
+
+
+    const popup = `
+      <strong>${escapeHtml(city)}${city && state ? ", " : ""}${escapeHtml(state)}</strong>
+      <br>
+      ${escapeHtml(String(date))}
+      <br><br>
+      ${escapeHtml(description)}
+      <br><br>
+      <strong>Killed:</strong> ${killed}
+      &nbsp;&nbsp;
+      <strong>Injured:</strong> ${injured}
+    `;
+
+
+    const marker =
+      L.circleMarker(
+        [lat, lon],
+        {
+          radius: 7,
+          fillOpacity: .75
+        }
+      )
+      .bindPopup(popup)
+      .addTo(map);
+
+
+    markers.push(marker);
+
+  });
+
+}
+
+
+// --------------------------------------------------
+// Table
+// --------------------------------------------------
+
+function updateTable(data) {
+
+  const table =
+    document.getElementById("incidentTable");
+
+
+  table.innerHTML = "";
+
+
+  data
+    .slice()
+    .sort((a,b) => {
+
+      const da =
+        new Date(
+          a.date ||
+          a.Date ||
+          a.incident_date ||
+          ""
+        );
+
+      const db =
+        new Date(
+          b.date ||
+          b.Date ||
+          b.incident_date ||
+          ""
+        );
+
+      return db - da;
+
+    })
+    .slice(0, 250)
+    .forEach(incident => {
+
+      const row =
+        document.createElement("tr");
+
+
+      const date =
+        incident.date ||
+        incident.Date ||
+        incident.incident_date ||
+        "";
+
+
+      const city =
+        incident.city ||
+        incident.City ||
+        "";
+
+
+      const state =
+        incident.state ||
+        incident.State ||
+        "";
+
+
+      const description =
+        incident.description ||
+        incident.Description ||
+        incident.summary ||
+        incident.Summary ||
+        "—";
+
+
+      const killed =
+        getNumber(
+          incident.killed ??
+          incident.deaths ??
+          incident.fatalities
+        );
+
+
+      const injured =
+        getNumber(
+          incident.injured ??
+          incident.wounded
+        );
+
+
+      row.innerHTML = `
+        <td>${escapeHtml(String(date))}</td>
+        <td>${escapeHtml(String(city))}</td>
+        <td>${escapeHtml(String(state))}</td>
+        <td>${escapeHtml(String(description))}</td>
+        <td>${killed}</td>
+        <td>${injured}</td>
+      `;
+
+
+      table.appendChild(row);
+
+    });
+
+
+  if (data.length > 250) {
+
+    const row =
+      document.createElement("tr");
+
+    row.innerHTML = `
+      <td colspan="6">
+        Showing the 250 most recent incidents.
+        Use the filters to narrow the results.
+      </td>
+    `;
+
+    table.appendChild(row);
+
+  }
+
+}
+
+
+// --------------------------------------------------
+// Security
+// --------------------------------------------------
+
+function escapeHtml(value) {
+
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+}
+
+
+// --------------------------------------------------
+// Start
+// --------------------------------------------------
+
+loadData();
+
+</script>
+
+</body>
+</html>
