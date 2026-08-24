@@ -1,646 +1,383 @@
-const ATTACKS_URL =
-  "https://services1.arcgis.com/Ezk9fcjSUkeadg6u/ArcGIS/rest/services/US_Attacks_After_2016_Real/FeatureServer/0/query";
+/*
+  U.S. POLITICAL VIOLENCE & TERRORISM MAP
 
+  Primary public source:
+  S2 Underground Incident Response Team
+  ArcGIS Domestic Terrorism Tracker
 
-async function getAttacks() {
+  The source describes this as a master list of high-profile
+  terror attacks in the United States that meet its stated
+  FBI-based definition.
 
-  const allFeatures = [];
+  This page labels those records "Terrorism / extremist violence"
+  rather than presenting them as a complete census of all
+  political violence in the United States.
+*/
 
-  let resultOffset = 0;
-  const pageSize = 1000;
+const TERRORISM_URL =
+  "https://services.arcgis.com/OeCRCKr7XFYQNdyJ/arcgis/rest/services/Domestic_Terrorism_Tracker/FeatureServer/1/query";
 
-  while (true) {
+const map = L.map("map").setView([39.8283, -98.5795], 4);
 
-    const params = new URLSearchParams({
-      where: "1=1",
-      outFields: "*",
-      returnGeometry: "true",
-      outSR: "4326",
-      f: "json",
-      resultOffset: String(resultOffset),
-      resultRecordCount: String(pageSize)
-    });
-
-    const response =
-      await fetch(`${ATTACKS_URL}?${params}`);
-
-    if (!response.ok) {
-      throw new Error(
-        `ArcGIS request failed: ${response.status}`
-      );
-    }
-
-    const data = await response.json();
-
-    if (data.error) {
-      throw new Error(
-        data.error.message ||
-        "ArcGIS returned an error"
-      );
-    }
-
-    const features = data.features || [];
-
-    allFeatures.push(...features);
-
-    console.log(
-      `Loaded ${allFeatures.length} incidents`
-    );
-
-    /*
-     * Stop when ArcGIS tells us there are no more
-     * records.
-     */
-    if (
-      features.length === 0 ||
-      features.length < pageSize ||
-      data.exceededTransferLimit !== true
-    ) {
-      break;
-    }
-
-    resultOffset += pageSize;
+L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {
+    attribution:
+      '&copy; OpenStreetMap contributors'
   }
+).addTo(map);
 
-  return allFeatures;
-}
+const markers = L.layerGroup().addTo(map);
 
+const statusElement = document.getElementById("status");
 
 function escapeHtml(value) {
-
-  if (
-    value === null ||
-    value === undefined
-  ) {
+  if (value === null || value === undefined) {
     return "";
   }
 
   return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-
-function findField(
-  attributes,
-  possibleNames
-) {
-
+function firstValue(attributes, possibleNames) {
   for (const name of possibleNames) {
-
     if (
-      Object.prototype.hasOwnProperty.call(
-        attributes,
-        name
-      ) &&
+      attributes &&
+      attributes[name] !== undefined &&
       attributes[name] !== null &&
       attributes[name] !== ""
     ) {
-
       return attributes[name];
     }
   }
 
-  return null;
+  return "";
 }
 
-
-function featureToGeoJSON(feature) {
-
-  const attributes =
-    feature.attributes || {};
-
-  const geometry =
-    feature.geometry || {};
-
-  if (
-    typeof geometry.x !== "number" ||
-    typeof geometry.y !== "number"
-  ) {
-
-    return null;
+function formatDate(value) {
+  if (!value) {
+    return "Date not available";
   }
 
+  const date = new Date(value);
 
-  const year = findField(
-    attributes,
-    [
-      "Year",
-      "iyear",
-      "year",
-      "YEAR"
-    ]
-  );
-
-
-  const month = findField(
-    attributes,
-    [
-      "Month",
-      "imonth",
-      "month",
-      "MONTH"
-    ]
-  );
-
-
-  const day = findField(
-    attributes,
-    [
-      "Day",
-      "iday",
-      "day",
-      "DAY"
-    ]
-  );
-
-
-  const city = findField(
-    attributes,
-    [
-      "City",
-      "city",
-      "CITY"
-    ]
-  );
-
-
-  const state = findField(
-    attributes,
-    [
-      "State",
-      "state",
-      "STATE",
-      "Province"
-    ]
-  );
-
-
-  const country = findField(
-    attributes,
-    [
-      "Country",
-      "country",
-      "COUNTRY"
-    ]
-  );
-
-
-  const attackType = findField(
-    attributes,
-    [
-      "AttackType",
-      "attacktype1_txt",
-      "Attack_Type",
-      "attack_type"
-    ]
-  );
-
-
-  const target = findField(
-    attributes,
-    [
-      "Target",
-      "targtype1_txt",
-      "Target_Type",
-      "target_type"
-    ]
-  );
-
-
-  const group = findField(
-    attributes,
-    [
-      "Group",
-      "gname",
-      "Perpetrator",
-      "perpetrator"
-    ]
-  );
-
-
-  const fatalities = findField(
-    attributes,
-    [
-      "Fatalities",
-      "nkill",
-      "Killed",
-      "Killed_Count",
-      "fatalities"
-    ]
-  );
-
-
-  const injuries = findField(
-    attributes,
-    [
-      "Injuries",
-      "nwound",
-      "Wounded",
-      "Injured",
-      "injuries"
-    ]
-  );
-
-
-  const description = findField(
-    attributes,
-    [
-      "Description",
-      "summary",
-      "Summary",
-      "description"
-    ]
-  );
-
-
-  const dateParts = [];
-
-
-  if (year) {
-    dateParts.push(year);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
   }
 
-
-  if (
-    month &&
-    Number(month) > 0
-  ) {
-
-    dateParts.push(
-      String(month).padStart(2, "0")
-    );
-  }
-
-
-  if (
-    day &&
-    Number(day) > 0
-  ) {
-
-    dateParts.push(
-      String(day).padStart(2, "0")
-    );
-  }
-
-
-  const date =
-    dateParts.length
-      ? dateParts.join("-")
-      : "";
-
-
-  return {
-
-    type: "Feature",
-
-    geometry: {
-
-      type: "Point",
-
-      coordinates: [
-        geometry.x,
-        geometry.y
-      ]
-    },
-
-    properties: {
-
-      date,
-
-      year,
-
-      month,
-
-      day,
-
-      city,
-
-      state,
-
-      country,
-
-      attackType,
-
-      target,
-
-      group,
-
-      fatalities:
-        fatalities ?? 0,
-
-      injuries:
-        injuries ?? 0,
-
-      description
-    }
-  };
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
 }
 
+function createMarker(feature) {
+  const attributes = feature.attributes || {};
+  const geometry = feature.geometry || {};
 
-function createPopup(properties) {
+  let latitude = geometry.y;
+  let longitude = geometry.x;
 
-  const location = [
-    properties.city,
-    properties.state
-  ]
-    .filter(Boolean)
-    .join(", ");
+  /*
+    ArcGIS can sometimes return Web Mercator coordinates.
+    Convert them to latitude/longitude when necessary.
+  */
 
+  if (
+    Math.abs(latitude) > 90 ||
+    Math.abs(longitude) > 180
+  ) {
+    const earthRadius = 6378137;
 
-  return `
-    <div style="min-width:240px">
+    longitude =
+      (longitude / earthRadius) * (180 / Math.PI);
 
+    latitude =
+      (2 *
+        Math.atan(
+          Math.exp(latitude / earthRadius)
+        ) -
+        Math.PI / 2) *
+      (180 / Math.PI);
+  }
+
+  if (
+    typeof latitude !== "number" ||
+    typeof longitude !== "number" ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    return false;
+  }
+
+  const date = firstValue(attributes, [
+    "Date",
+    "DATE",
+    "date",
+    "Incident_Date",
+    "incident_date",
+    "Attack_Date",
+    "attack_date"
+  ]);
+
+  const city = firstValue(attributes, [
+    "City",
+    "CITY",
+    "city",
+    "Location",
+    "location"
+  ]);
+
+  const state = firstValue(attributes, [
+    "State",
+    "STATE",
+    "state",
+    "State_Name",
+    "state_name"
+  ]);
+
+  const title = firstValue(attributes, [
+    "Name",
+    "NAME",
+    "name",
+    "Incident",
+    "incident",
+    "Incident_Name",
+    "incident_name",
+    "Attack",
+    "attack",
+    "Title",
+    "title"
+  ]);
+
+  const description = firstValue(attributes, [
+    "Description",
+    "DESCRIPTION",
+    "description",
+    "Details",
+    "details",
+    "Summary",
+    "summary"
+  ]);
+
+  const fatalities = firstValue(attributes, [
+    "Fatalities",
+    "FATALITIES",
+    "fatalities",
+    "Killed",
+    "killed",
+    "Deaths",
+    "deaths"
+  ]);
+
+  const injuries = firstValue(attributes, [
+    "Injuries",
+    "INJURIES",
+    "injuries",
+    "Wounded",
+    "wounded"
+  ]);
+
+  const location =
+    [city, state]
+      .filter(Boolean)
+      .join(", ") ||
+    "Location not available";
+
+  const incidentTitle =
+    title ||
+    "Terrorism / extremist violence incident";
+
+  const popup = `
+    <div style="max-width:320px">
       <h3 style="margin-top:0">
-        Terrorism incident
+        ${escapeHtml(incidentTitle)}
       </h3>
 
       <p>
+        <strong>Category:</strong>
+        Terrorism / extremist violence
+      </p>
+
+      <p>
         <strong>Date:</strong>
-        ${escapeHtml(
-          properties.date ||
-          "Date unavailable"
-        )}
-      </p>
-
-      ${
-        location
-          ? `
-            <p>
-              <strong>Location:</strong>
-              ${escapeHtml(location)}
-            </p>
-          `
-          : ""
-      }
-
-      ${
-        properties.attackType
-          ? `
-            <p>
-              <strong>Attack type:</strong>
-              ${escapeHtml(
-                properties.attackType
-              )}
-            </p>
-          `
-          : ""
-      }
-
-      ${
-        properties.target
-          ? `
-            <p>
-              <strong>Target:</strong>
-              ${escapeHtml(
-                properties.target
-              )}
-            </p>
-          `
-          : ""
-      }
-
-      ${
-        properties.group
-          ? `
-            <p>
-              <strong>Attributed group:</strong>
-              ${escapeHtml(
-                properties.group
-              )}
-            </p>
-          `
-          : ""
-      }
-
-      <p>
-        <strong>Fatalities:</strong>
-        ${escapeHtml(
-          properties.fatalities
-        )}
+        ${escapeHtml(formatDate(date))}
       </p>
 
       <p>
-        <strong>Injuries:</strong>
-        ${escapeHtml(
-          properties.injuries
-        )}
+        <strong>Location:</strong>
+        ${escapeHtml(location)}
       </p>
 
       ${
-        properties.description
+        fatalities !== ""
           ? `
             <p>
-              <strong>Description:</strong><br>
-              ${escapeHtml(
-                properties.description
-              )}
+              <strong>Fatalities:</strong>
+              ${escapeHtml(fatalities)}
             </p>
           `
           : ""
       }
 
+      ${
+        injuries !== ""
+          ? `
+            <p>
+              <strong>Injuries:</strong>
+              ${escapeHtml(injuries)}
+            </p>
+          `
+          : ""
+      }
+
+      ${
+        description
+          ? `
+            <p>
+              ${escapeHtml(description)}
+            </p>
+          `
+          : ""
+      }
+
+      <hr>
+
+      <small>
+        Source: S2 Underground Incident Response Team,
+        Domestic Terrorism Tracker.
+      </small>
     </div>
   `;
+
+  const marker = L.circleMarker(
+    [latitude, longitude],
+    {
+      radius: 7,
+      weight: 2,
+      fillOpacity: 0.75
+    }
+  );
+
+  marker.bindPopup(popup);
+
+  marker.addTo(markers);
+
+  return true;
 }
 
-
-async function initializeMap() {
-
-  const mapElement =
-    document.getElementById("map");
-
-
-  if (!mapElement) {
-
-    console.error(
-      "No #map element found."
-    );
-
-    return;
-  }
-
+async function loadTerrorismData() {
+  statusElement.textContent =
+    "Loading terrorism and political-violence records…";
 
   try {
+    /*
+      Ask ArcGIS for every available record.
 
-    mapElement.innerHTML = "";
+      resultRecordCount is deliberately below the service's
+      maximum record count, and pagination is handled below.
+    */
 
+    let allFeatures = [];
+    let offset = 0;
 
-    const map =
-      L.map("map")
-       .setView(
-         [39.5, -98.35],
-         4
-       );
+    while (true) {
+      const params = new URLSearchParams({
+        where: "1=1",
+        outFields: "*",
+        returnGeometry: "true",
+        outSR: "4326",
+        f: "json",
+        resultOffset: String(offset),
+        resultRecordCount: "2000"
+      });
 
+      const response = await fetch(
+        `${TERRORISM_URL}?${params.toString()}`
+      );
 
-    L.tileLayer(
-      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      {
-        attribution:
-          "&copy; OpenStreetMap contributors"
-      }
-    ).addTo(map);
-
-
-    const markerLayer =
-      L.layerGroup().addTo(map);
-
-
-    const features =
-      await getAttacks();
-
-
-    console.log(
-      `Total records returned: ${features.length}`
-    );
-
-
-    const incidents =
-      features
-        .map(featureToGeoJSON)
-        .filter(Boolean);
-
-
-    incidents.forEach(
-      (incident) => {
-
-        const coordinates =
-          incident.geometry.coordinates;
-
-
-        const marker =
-          L.circleMarker(
-            [
-              coordinates[1],
-              coordinates[0]
-            ],
-            {
-              radius: 5,
-              weight: 1,
-              fillOpacity: 0.7
-            }
-          );
-
-
-        marker.bindPopup(
-          createPopup(
-            incident.properties
-          )
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}`
         );
-
-
-        markerLayer.addLayer(marker);
       }
-    );
 
+      const data = await response.json();
 
-    const total =
-      incidents.length;
+      if (data.error) {
+        throw new Error(
+          data.error.message ||
+          "ArcGIS returned an error."
+        );
+      }
 
+      const features = data.features || [];
 
-    const fatalities =
-      incidents.reduce(
-        (sum, incident) =>
-          sum +
-          Number(
-            incident.properties
-              .fatalities || 0
-          ),
-        0
-      );
+      allFeatures.push(...features);
 
+      if (
+        features.length < 2000 ||
+        data.exceededTransferLimit !== true
+      ) {
+        break;
+      }
 
-    const stats =
-      document.getElementById(
-        "stats"
-      );
+      offset += features.length;
 
-
-    if (stats) {
-
-      stats.innerHTML = `
-        <strong>
-          ${total.toLocaleString()}
-        </strong>
-        incidents displayed
-
-        &nbsp; | &nbsp;
-
-        <strong>
-          ${fatalities.toLocaleString()}
-        </strong>
-        reported fatalities
-      `;
+      /*
+        Safety limit so a future dataset change cannot cause
+        an accidental endless request loop.
+      */
+      if (offset > 50000) {
+        break;
+      }
     }
 
+    markers.clearLayers();
 
-    const source =
-      document.getElementById(
-        "source"
-      );
+    let plotted = 0;
 
-
-    if (source) {
-
-      source.innerHTML = `
-        Source:
-
-        <a
-          href="https://www.start.umd.edu/gtd"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          START / Global Terrorism Database
-        </a>
-      `;
+    for (const feature of allFeatures) {
+      if (createMarker(feature)) {
+        plotted++;
+      }
     }
 
+    statusElement.innerHTML = `
+      <strong>${plotted.toLocaleString()}</strong>
+      mapped incidents
+      &nbsp;•&nbsp;
+      Public terrorism dataset
+    `;
 
-    console.log(
-      "Terrorism map successfully initialized."
-    );
+    /*
+      If records exist but none have coordinates, make that
+      obvious rather than silently displaying an empty map.
+    */
 
+    if (allFeatures.length > 0 && plotted === 0) {
+      statusElement.innerHTML = `
+        ${allFeatures.length.toLocaleString()}
+        records were returned, but none contained usable
+        map coordinates.
+      `;
+    }
 
   } catch (error) {
+    console.error(error);
 
-    console.error(
-      "Terrorism map error:",
-      error
-    );
-
-
-    mapElement.innerHTML = `
-      <div style="
-        padding:20px;
-        font-family:system-ui,sans-serif;
-      ">
-
-        <h3>
-          Unable to load terrorism data
-        </h3>
-
-        <p>
-          ${escapeHtml(
-            error.message
-          )}
-        </p>
-
-        <p>
-          Check the browser console for
-          additional information.
-        </p>
-
-      </div>
+    statusElement.innerHTML = `
+      <strong>Unable to load the incident data.</strong>
+      <br>
+      Please refresh the page and try again.
     `;
   }
 }
 
-
-document.addEventListener(
-  "DOMContentLoaded",
-  initializeMap
-);
+loadTerrorismData();
