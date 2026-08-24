@@ -1,22 +1,82 @@
+[
 {
-  "source": "Domestic Terrorism Tracker",
-  "sourceUrl": "https://services.arcgis.com/OeCRCKr7XFYQNdyJ/arcgis/rest/services/Domestic_Terrorism_Tracker/FeatureServer",
-  "definition": "Incidents included by the source dataset under its definition of terror attacks.",
-  "updated": "2026-08-23",
-  "incidents": [
-    {
-      "id": "example-001",
-      "date": "2020-05-01",
-      "city": "Washington",
-      "state": "DC",
-      "latitude": 38.9072,
-      "longitude": -77.0369,
-      "title": "Example incident",
-      "description": "Example record used to verify the map interface.",
-      "fatalities": 0,
-      "injuries": 0,
-      "category": "Example",
-      "source": "Domestic Terrorism Tracker"
-    }
-  ]
+"date": "2024-01-15",
+"location": "Washington",
+"state": "DC",
+"description": "Test map record A",
+"killed": 0,
+"injured": 0,
+"latitude": 38.9072,
+"longitude": -77.0369
+},
+{
+"date": "2024-02-20",
+"location": "New York",
+"state": "NY",
+"description": "Test map record B",
+"killed": 0,
+"injured": 0,
+"latitude": 40.7128,
+"longitude": -74.0060
+},
+{
+"date": "2024-03-10",
+"location": "Chicago",
+"state": "IL",
+"description": "Test map record C",
+"killed": 0,
+"injured": 0,
+"latitude": 41.8781,
+"longitude": -87.6298
+},
+{
+"date": "2024-04-05",
+"location": "Atlanta",
+"state": "GA",
+"description": "Test map record D",
+"killed": 0,
+"injured": 0,
+"latitude": 33.7490,
+"longitude": -84.3880
+},
+{
+"date": "2024-05-12",
+"location": "Los Angeles",
+"state": "CA",
+"description": "Test map record E",
+"killed": 0,
+"injured": 0,
+"latitude": 34.0522,
+"longitude": -118.2437
+},
+{
+"date": "2024-06-18",
+"location": "Denver",
+"state": "CO",
+"description": "Test map record F",
+"killed": 0,
+"injured": 0,
+"latitude": 39.7392,
+"longitude": -104.9903
+},
+{
+"date": "2024-07-22",
+"location": "Phoenix",
+"state": "AZ",
+"description": "Test map record G",
+"killed": 0,
+"injured": 0,
+"latitude": 33.4484,
+"longitude": -112.0740
+},
+{
+"date": "2024-08-30",
+"location": "Seattle",
+"state": "WA",
+"description": "Test map record H",
+"killed": 0,
+"injured": 0,
+"latitude": 47.6062,
+"longitude": -122.3321
 }
+]
