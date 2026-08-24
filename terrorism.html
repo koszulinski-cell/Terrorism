@@ -14,10 +14,12 @@
     U.S. Terrorism & Political Violence
   </title>
 
+
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   >
+
 
   <style>
 
@@ -25,150 +27,282 @@
       box-sizing: border-box;
     }
 
+
     body {
+
       margin: 0;
+
       font-family:
         Arial,
         Helvetica,
         sans-serif;
+
       background: #f5f5f5;
+
       color: #111;
+
     }
+
 
     header {
+
       background: #111;
+
       color: white;
+
       padding: 24px;
+
     }
+
 
     header h1 {
-      margin: 0 0 8px;
+
+      margin:
+        0 0 8px;
+
       font-size: 30px;
+
     }
+
 
     header p {
+
       margin: 0;
+
       max-width: 850px;
+
       color: #ccc;
+
       line-height: 1.5;
+
     }
+
 
     .controls {
+
       background: white;
+
       padding: 15px 20px;
-      border-bottom: 1px solid #ddd;
+
+      border-bottom:
+        1px solid #ddd;
+
       display: flex;
+
       gap: 12px;
+
       align-items: center;
+
       flex-wrap: wrap;
+
     }
 
+
     .controls label {
+
       font-weight: bold;
+
     }
+
 
     .controls select,
     .controls button {
-      padding: 8px 10px;
-      border: 1px solid #aaa;
+
+      padding:
+        8px 10px;
+
+      border:
+        1px solid #aaa;
+
       border-radius: 5px;
+
       background: white;
+
+      cursor: pointer;
+
     }
+
 
     .stats {
+
       display: grid;
+
       grid-template-columns:
         repeat(3, 1fr);
+
       background: white;
-      border-bottom: 1px solid #ddd;
+
+      border-bottom:
+        1px solid #ddd;
+
     }
+
 
     .stat {
-      padding: 16px 20px;
-      border-right: 1px solid #ddd;
+
+      padding:
+        16px 20px;
+
+      border-right:
+        1px solid #ddd;
+
     }
+
 
     .stat:last-child {
+
       border-right: none;
+
     }
+
 
     .stat-label {
+
       font-size: 12px;
+
       color: #666;
-      text-transform: uppercase;
+
+      text-transform:
+        uppercase;
+
     }
+
 
     .stat-value {
+
       font-size: 27px;
+
       font-weight: bold;
+
       margin-top: 4px;
+
     }
+
 
     #map {
+
       width: 100%;
+
       height: 65vh;
+
       min-height: 500px;
+
     }
+
 
     .below {
+
       background: white;
-      padding: 25px 20px;
+
+      padding:
+        25px 20px;
+
     }
+
 
     .status {
+
       padding: 12px;
+
       background: #eee;
+
       border-radius: 5px;
+
       margin-bottom: 20px;
+
       line-height: 1.5;
+
     }
+
 
     .incident-list {
+
       max-height: 500px;
+
       overflow-y: auto;
-      border: 1px solid #ddd;
+
+      border:
+        1px solid #ddd;
+
     }
+
 
     .incident {
+
       padding: 12px;
-      border-bottom: 1px solid #ddd;
+
+      border-bottom:
+        1px solid #ddd;
+
       cursor: pointer;
+
+      line-height: 1.5;
+
     }
+
 
     .incident:hover {
+
       background: #f5f5f5;
+
     }
+
 
     .incident:last-child {
+
       border-bottom: none;
+
     }
+
 
     .about {
+
       max-width: 900px;
+
       margin-top: 30px;
+
       line-height: 1.6;
+
     }
 
+
     footer {
+
       padding: 20px;
+
       color: #666;
+
       font-size: 13px;
+
     }
+
 
     @media (max-width: 700px) {
 
       .stats {
-        grid-template-columns: 1fr;
+
+        grid-template-columns:
+          1fr;
+
       }
+
 
       .stat {
+
         border-right: none;
-        border-bottom: 1px solid #ddd;
+
+        border-bottom:
+          1px solid #ddd;
+
       }
 
+
       #map {
+
         height: 60vh;
+
         min-height: 400px;
+
       }
 
     }
@@ -187,10 +321,13 @@
     U.S. Terrorism & Political Violence
   </h1>
 
+
   <p>
-    Interactive map of documented terrorism incidents
-    in the United States. Historical incidents are
-    based on Global Terrorism Database-derived data.
+    Interactive map of documented attacks
+    in the United States. Incidents are
+    drawn from a public geographic dataset
+    derived from the University of Maryland
+    START / Global Terrorism Database.
   </p>
 
 </header>
@@ -201,6 +338,7 @@
   <label for="year">
     Year:
   </label>
+
 
   <select id="year">
 
@@ -220,11 +358,13 @@
 
 <div class="stats">
 
+
   <div class="stat">
 
     <div class="stat-label">
       Incidents shown
     </div>
+
 
     <div
       class="stat-value"
@@ -242,6 +382,7 @@
       People killed
     </div>
 
+
     <div
       class="stat-value"
       id="deathCount"
@@ -257,6 +398,7 @@
     <div class="stat-label">
       People injured
     </div>
+
 
     <div
       class="stat-value"
@@ -280,7 +422,7 @@
     class="status"
     id="status"
   >
-    Loading incident data...
+    Connecting to the public incident dataset…
   </div>
 
 
@@ -301,38 +443,46 @@
       About this dataset
     </h2>
 
-    <p>
-      This page presents documented terrorism
-      incidents in the United States using a
-      Global Terrorism Database-derived geographic
-      dataset.
-    </p>
 
     <p>
-      The underlying Global Terrorism Database
-      contains incident-level information including
-      dates, locations, geographic coordinates,
-      perpetrators, targets, fatalities and injuries.
+      This visualization displays documented
+      attacks in the United States using a
+      publicly accessible geographic layer
+      derived from the University of Maryland
+      START Global Terrorism Database.
     </p>
 
-    <p>
-      An incident appearing in this visualization
-      does not by itself establish that an individual
-      was legally convicted of terrorism. The
-      classification follows the underlying dataset.
-    </p>
 
     <p>
+      The underlying dataset records incidents
+      and associated geographic, casualty and
+      other event information. The visualization
+      does not independently determine whether
+      an incident legally constitutes domestic
+      terrorism.
+    </p>
+
+
+    <p>
+      Inclusion in the underlying dataset should
+      not be interpreted as a legal finding or
+      criminal conviction.
+    </p>
+
+
+    <p>
+
       <strong>
         Source:
       </strong>
 
-      Global Terrorism Database-derived public
-      geographic dataset.
+      University of Maryland START /
+      Global Terrorism Database-derived
+      public geographic dataset.
+
     </p>
 
   </div>
-
 
 </div>
 
@@ -340,7 +490,13 @@
 <footer>
 
   Data source:
-  Global Terrorism Database-derived dataset.
+  University of Maryland START /
+  Global Terrorism Database-derived
+  public geographic dataset.
+
+
+  <br><br>
+
 
   Map:
   OpenStreetMap contributors.
