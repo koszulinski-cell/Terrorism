@@ -1,24 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>U.S. Terrorism & Political Violence Map</title>
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>
+    U.S. Terrorism & Political Violence
+  </title>
 
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+  >
 
   <style>
+
     * {
       box-sizing: border-box;
     }
 
     body {
       margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
       background: #f5f5f5;
       color: #111;
     }
@@ -26,18 +38,18 @@
     header {
       background: #111;
       color: white;
-      padding: 22px 20px;
+      padding: 24px;
     }
 
     header h1 {
       margin: 0 0 8px;
-      font-size: 28px;
+      font-size: 30px;
     }
 
     header p {
       margin: 0;
-      color: #ccc;
       max-width: 850px;
+      color: #ccc;
       line-height: 1.5;
     }
 
@@ -47,8 +59,8 @@
       border-bottom: 1px solid #ddd;
       display: flex;
       gap: 12px;
-      flex-wrap: wrap;
       align-items: center;
+      flex-wrap: wrap;
     }
 
     .controls label {
@@ -56,22 +68,23 @@
     }
 
     .controls select,
-    .controls input {
-      padding: 8px;
-      border: 1px solid #bbb;
+    .controls button {
+      padding: 8px 10px;
+      border: 1px solid #aaa;
       border-radius: 5px;
       background: white;
     }
 
     .stats {
-      background: white;
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns:
+        repeat(3, 1fr);
+      background: white;
       border-bottom: 1px solid #ddd;
     }
 
     .stat {
-      padding: 15px 20px;
+      padding: 16px 20px;
       border-right: 1px solid #ddd;
     }
 
@@ -81,20 +94,20 @@
 
     .stat-label {
       font-size: 12px;
-      text-transform: uppercase;
       color: #666;
-      margin-bottom: 4px;
+      text-transform: uppercase;
     }
 
     .stat-value {
-      font-size: 26px;
+      font-size: 27px;
       font-weight: bold;
+      margin-top: 4px;
     }
 
     #map {
+      width: 100%;
       height: 65vh;
       min-height: 500px;
-      width: 100%;
     }
 
     .below {
@@ -102,19 +115,16 @@
       padding: 25px 20px;
     }
 
-    .below h2 {
-      margin-top: 0;
-    }
-
     .status {
       padding: 12px;
       background: #eee;
-      margin-bottom: 15px;
       border-radius: 5px;
+      margin-bottom: 20px;
+      line-height: 1.5;
     }
 
     .incident-list {
-      max-height: 450px;
+      max-height: 500px;
       overflow-y: auto;
       border: 1px solid #ddd;
     }
@@ -122,20 +132,20 @@
     .incident {
       padding: 12px;
       border-bottom: 1px solid #ddd;
+      cursor: pointer;
+    }
+
+    .incident:hover {
+      background: #f5f5f5;
     }
 
     .incident:last-child {
       border-bottom: none;
     }
 
-    .incident strong {
-      display: block;
-      margin-bottom: 4px;
-    }
-
     .about {
-      margin-top: 30px;
       max-width: 900px;
+      margin-top: 30px;
       line-height: 1.6;
     }
 
@@ -143,10 +153,10 @@
       padding: 20px;
       color: #666;
       font-size: 13px;
-      background: #f5f5f5;
     }
 
     @media (max-width: 700px) {
+
       .stats {
         grid-template-columns: 1fr;
       }
@@ -160,114 +170,194 @@
         height: 60vh;
         min-height: 400px;
       }
+
     }
+
   </style>
+
 </head>
+
 
 <body>
 
+
 <header>
-  <h1>U.S. Terrorism & Political Violence</h1>
+
+  <h1>
+    U.S. Terrorism & Political Violence
+  </h1>
+
   <p>
-    An interactive map of documented incidents in the United States.
-    Historical terrorism incidents are based on publicly available
-    Global Terrorism Database-derived data.
+    Interactive map of documented terrorism incidents
+    in the United States. Historical incidents are
+    based on Global Terrorism Database-derived data.
   </p>
+
 </header>
+
 
 <div class="controls">
 
-  <label for="category">Category:</label>
-
-  <select id="category">
-    <option value="all">All incidents</option>
-    <option value="terrorism">Terrorism</option>
-  </select>
-
-  <label for="year">Year:</label>
+  <label for="year">
+    Year:
+  </label>
 
   <select id="year">
-    <option value="all">All years</option>
+
+    <option value="all">
+      All years
+    </option>
+
   </select>
 
+
   <button id="reset">
-    Reset filters
+    Reset
   </button>
 
 </div>
 
+
 <div class="stats">
 
   <div class="stat">
-    <div class="stat-label">Incidents shown</div>
-    <div class="stat-value" id="incidentCount">0</div>
+
+    <div class="stat-label">
+      Incidents shown
+    </div>
+
+    <div
+      class="stat-value"
+      id="incidentCount"
+    >
+      0
+    </div>
+
   </div>
 
-  <div class="stat">
-    <div class="stat-label">People killed</div>
-    <div class="stat-value" id="deathCount">0</div>
-  </div>
 
   <div class="stat">
-    <div class="stat-label">People injured</div>
-    <div class="stat-value" id="injuryCount">0</div>
+
+    <div class="stat-label">
+      People killed
+    </div>
+
+    <div
+      class="stat-value"
+      id="deathCount"
+    >
+      0
+    </div>
+
+  </div>
+
+
+  <div class="stat">
+
+    <div class="stat-label">
+      People injured
+    </div>
+
+    <div
+      class="stat-value"
+      id="injuryCount"
+    >
+      0
+    </div>
+
   </div>
 
 </div>
+
 
 <div id="map"></div>
 
+
 <div class="below">
 
-  <div class="status" id="status">
-    Loading incidents...
+
+  <div
+    class="status"
+    id="status"
+  >
+    Loading incident data...
   </div>
 
-  <h2>Incidents</h2>
 
-  <div class="incident-list" id="incidentList"></div>
+  <h2>
+    Incidents
+  </h2>
+
+
+  <div
+    class="incident-list"
+    id="incidentList"
+  ></div>
+
 
   <div class="about">
 
-    <h2>About this project</h2>
+    <h2>
+      About this dataset
+    </h2>
 
     <p>
-      This project presents a compiled map of documented terrorism incidents
-      in the United States. The classification of an event as terrorism comes
-      from the underlying source dataset and does not necessarily mean that
-      a particular person was legally convicted of terrorism.
+      This page presents documented terrorism
+      incidents in the United States using a
+      Global Terrorism Database-derived geographic
+      dataset.
     </p>
 
     <p>
-      The historical terrorism data are derived from the Global Terrorism
-      Database (GTD), maintained by the National Consortium for the Study of
-      Terrorism and Responses to Terrorism (START) at the University of
-      Maryland.
+      The underlying Global Terrorism Database
+      contains incident-level information including
+      dates, locations, geographic coordinates,
+      perpetrators, targets, fatalities and injuries.
     </p>
 
     <p>
-      GTD contains incident-level information including date, location and
-      casualties. Its current published series covers 1970–2020, with a
-      separate partial 2021 release.
+      An incident appearing in this visualization
+      does not by itself establish that an individual
+      was legally convicted of terrorism. The
+      classification follows the underlying dataset.
     </p>
 
     <p>
-      <strong>Important:</strong> this is a research and educational
-      visualization, not an official government classification system.
+      <strong>
+        Source:
+      </strong>
+
+      Global Terrorism Database-derived public
+      geographic dataset.
     </p>
 
   </div>
 
+
 </div>
 
+
 <footer>
-  Sources: START / Global Terrorism Database and publicly available
-  GTD-derived data. Map © OpenStreetMap contributors.
+
+  Data source:
+  Global Terrorism Database-derived dataset.
+
+  Map:
+  OpenStreetMap contributors.
+
 </footer>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<script src="terrorism.js"></script>
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+></script>
+
+
+<script
+  src="terrorism.js"
+></script>
+
 
 </body>
+
 </html>
